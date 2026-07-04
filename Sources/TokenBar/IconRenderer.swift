@@ -5,9 +5,13 @@ public final class IconRenderer {
 
     public init() {
         var c: [AggregateStatus: NSImage] = [:]
-        c[.ok] = IconRenderer.load(name: "icon_green_512x512")
-        c[.warn] = IconRenderer.load(name: "icon_yellow_512x512")
-        c[.danger] = IconRenderer.load(name: "icon_red_512x512")
+        // The status bar shows a single monochrome icon; tint color carries the status
+        // (green/yellow/red). Loading is keyed by AggregateStatus so we could swap
+        // to a colored icon per state later without changing the consumer.
+        let base = IconRenderer.load(name: "icon_512x512")
+        c[.ok] = base
+        c[.warn] = base
+        c[.danger] = base
         self.cache = c
     }
 
