@@ -6,11 +6,6 @@ public enum ProviderStatus: Sendable, Equatable {
     case error(String)
 }
 
-public enum FetchMode: Sendable {
-    case http(method: String, url: String, headers: [String: String])
-    case webView(url: String)
-}
-
 public struct Quota: Identifiable, Sendable, Equatable {
     public let id: String
     public let label: String

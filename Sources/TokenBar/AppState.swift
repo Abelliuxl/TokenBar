@@ -16,16 +16,23 @@ public final class AppState: ObservableObject {
         snapshots.removeValue(forKey: providerId)
     }
 
-    /// Aggregate health: .ok / .warn (any quota ≤ 20%) / .danger (any ≤ 5% or needsRelogin)
+    /// Aggregate health across all providers.
+    /// `q.fraction` is `used / total`, so:
+    ///   - fraction ≥ 0.95 → bumped to .danger
+    ///   - fraction ≥ 0.80 → .warn (used ≥80% of total)
+    ///   - any snapshot in `.needsRelogin` or `.error(...)` → .danger
     public var overallStatus: AggregateStatus {
         var worst: AggregateStatus = .ok
         for snap in snapshots.values {
             for q in snap.quotas {
-                if q.fraction >= 0.95 { worst = .danger(max(worst, .warn)); continue }
-                if q.fraction >= 0.80 { worst = max(worst, .warn) }
+                if q.fraction >= 0.95 {
+                    worst = max(worst, .danger)
+                } else if q.fraction >= 0.80 {
+                    worst = max(worst, .warn)
+                }
             }
-            if case .needsRelogin = snap.status { worst = .danger(worst) }
-            if case .error = snap.status { worst = .danger(worst) }
+            if case .needsRelogin = snap.status { worst = max(worst, .danger) }
+            if case .error = snap.status { worst = max(worst, .danger) }
         }
         return worst
     }
@@ -33,12 +40,23 @@ public final class AppState: ObservableObject {
 
 public enum AggregateStatus: Equatable, Comparable {
     case ok, warn, danger
+
     public static func < (lhs: AggregateStatus, rhs: AggregateStatus) -> Bool {
         order(lhs) < order(rhs)
     }
+
     private static func order(_ s: AggregateStatus) -> Int {
-        switch s { case .ok: return 0; case .warn: return 1; case .danger: return 2 }
+        switch s {
+        case .ok: return 0
+        case .warn: return 1
+        case .danger: return 2
+        }
     }
-    static func max(_ a: AggregateStatus, _ b: AggregateStatus) -> AggregateStatus { a >= b ? a : b }
-    static func danger(_ other: AggregateStatus) -> AggregateStatus { .danger }
+}
+
+extension AggregateStatus {
+    /// `max` of two statuses using ordinal comparison.
+    static func max(_ a: AggregateStatus, _ b: AggregateStatus) -> AggregateStatus {
+        a >= b ? a : b
+    }
 }

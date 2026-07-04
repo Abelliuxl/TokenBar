@@ -17,8 +17,11 @@ public final class LoginWindowController: NSWindowController {
         self.onFinish = onFinish
 
         let config = WKWebViewConfiguration()
-        let nonPersistent = WKWebsiteDataStore.nonPersistent()
-        config.websiteDataStore = nonPersistent
+        // Use the default (persistent) website data store so cookies set during
+        // login survive across app restarts. WebViewAdapter.fetch() uses the same
+        // default store, so logged-in cookies are picked up on the next poll.
+        // (For HTTP adapters we additionally mirror cookies into the Keychain.)
+        config.websiteDataStore = .default()
         self.webView = WKWebView(frame: win.contentView!.bounds, configuration: config)
         self.webView.autoresizingMask = [.width, .height]
         win.contentView?.addSubview(self.webView)
@@ -37,11 +40,17 @@ public final class LoginWindowController: NSWindowController {
     }
 
     @objc private func windowWillClose() {
-        // Harvest cookies from the login webview's own nonPersistent store.
+        // Harvest cookies from the login webview's persistent store.
+        // Domain match: cookie.domain must equal host or be a parent of host
+        // (correct suffix direction; the previous `contains()` matched too loosely
+        // — e.g. "b.foo.com" against host "foo.com.b" would have matched).
         let cookieStore = webView.configuration.websiteDataStore.httpCookieStore
         cookieStore.getAllCookies { [weak self] all in
             let host = self?.webView.url?.host ?? ""
-            let relevant = all.filter { $0.domain.contains(host) || host.contains($0.domain) }
+            let relevant = all.filter { cookie in
+                let cd = cookie.domain
+                return cd == host || host.hasSuffix(".\(cd)")
+            }
             let json = Self.serialize(cookies: relevant)
             DispatchQueue.main.async {
                 self?.onFinish?(json)
