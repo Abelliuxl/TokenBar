@@ -4,13 +4,13 @@ import AppKit
 let bundleId = "com.liuxiaoliang.tokenbar"
 if let running = NSWorkspace.shared.runningApplications.first(where: {
     $0.bundleIdentifier == bundleId
-}) && running.processIdentifier != getpid() {
+}), running.processIdentifier != getpid() {
     print("TokenBar is already running (pid=\(running.processIdentifier))")
     exit(0)
 }
 
 let app = NSApplication.shared
-let delegate = AppDelegate()
+let delegate = MainActor.assumeIsolated { AppDelegate() }
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
