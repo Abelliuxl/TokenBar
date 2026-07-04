@@ -31,9 +31,8 @@ for color_name, color in [("green",(46,204,113,255)),
                           ("red",(231,76,60,255))]:
     for sz in [16, 32, 64, 128, 256, 512]:
         img = make_icon(color, sz)
-        suffix = "" if sz == 512 else f"_{sz}x{sz}"
+        # Always use the sized suffix per Apple iconset convention.
+        suffix = f"_{sz}x{sz}"
         out = OUT / f"icon_{color_name}{suffix}.png"
         img.save(out)
-    # Copy 512 as 512x512 (retina)
-    (OUT / "icon_512x512.png").write_bytes((OUT / "icon_green_512x512.png").read_bytes())
 print(f"Icons written to {OUT}")
