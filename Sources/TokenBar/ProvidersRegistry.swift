@@ -11,6 +11,7 @@ public struct ProvidersRegistry {
         VolcanoEngineAdapter()
     ])
 
+    @MainActor
     public func enabled(_ store: SettingsStore = .init()) -> [any ProviderAdapter] {
         let enabledSet = store.enabledProviderIds
         if enabledSet.isEmpty { return adapters }
