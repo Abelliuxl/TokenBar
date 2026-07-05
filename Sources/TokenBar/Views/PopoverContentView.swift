@@ -1,9 +1,11 @@
 import SwiftUI
+import ServiceManagement
 
 public struct PopoverContentView: View {
     @ObservedObject var appState: AppState
     let onRefresh: () -> Void
     @State private var refreshing = false
+    @AppStorage("tb.launchAtLogin") private var launchAtLogin: Bool = false
 
     public init(appState: AppState, onRefresh: @escaping () -> Void) {
         self.appState = appState
@@ -43,14 +45,36 @@ public struct PopoverContentView: View {
             }
 
             Divider()
-            HStack {
-                Button("退出") { NSApp.terminate(nil) }.buttonStyle(.borderless)
-                Spacer()
-                Text("v0.1").font(.caption2).foregroundStyle(.secondary)
+            VStack(spacing: 6) {
+                Toggle("开机启动", isOn: $launchAtLogin)
+                    .font(.caption)
+                    .toggleStyle(.switch)
+                    .onChange(of: launchAtLogin) { _, newValue in
+                        Self.setLaunchAtLogin(newValue)
+                    }
+                HStack {
+                    Button("退出") { NSApp.terminate(nil) }.buttonStyle(.borderless)
+                    Spacer()
+                    Text("v0.1").font(.caption2).foregroundStyle(.secondary)
+                }
             }
             .padding(8)
         }
         .frame(width: 320)
+    }
+
+    /// Register/unregister the app as a Login Item via SMAppService (macOS 13+).
+    /// The build target is macOS 14, so this API is always available.
+    private static func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            AppLog.lifecycle.error("Failed to \(enabled ? "enable" : "disable") launch at login: \(error.localizedDescription)")
+        }
     }
 
     @MainActor
