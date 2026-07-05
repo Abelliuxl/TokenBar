@@ -45,18 +45,16 @@ public struct PopoverContentView: View {
             }
 
             Divider()
-            VStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Toggle("开机启动", isOn: $launchAtLogin)
                     .font(.caption)
                     .toggleStyle(.switch)
                     .onChange(of: launchAtLogin) { _, newValue in
                         Self.setLaunchAtLogin(newValue)
                     }
-                HStack {
-                    Button("退出") { NSApp.terminate(nil) }.buttonStyle(.borderless)
-                    Spacer()
-                    Text("v0.1").font(.caption2).foregroundStyle(.secondary)
-                }
+                Spacer()
+                Button("退出") { NSApp.terminate(nil) }.buttonStyle(.borderless)
+                Text("v0.1").font(.caption2).foregroundStyle(.secondary)
             }
             .padding(8)
         }
