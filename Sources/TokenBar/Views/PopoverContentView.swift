@@ -56,9 +56,7 @@ public struct PopoverContentView: View {
     @MainActor
     private func loginFlow(for p: any ProviderAdapter) async {
         let mgr = WebViewSessionManager()
-        if let blob = await mgr.startLogin(for: p) {
-            try? KeychainStore().save(providerId: p.id, data: blob)
-        }
+        await mgr.startLogin(for: p)
         onRefresh()
     }
 }

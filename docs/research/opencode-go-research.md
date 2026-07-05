@@ -1,65 +1,76 @@
-# opencode.go Research
+# opencode go Research ✅ 已验证
 
-> **Status:** Stub research file. The controller will replace this content with
-> actual findings from a manual login via Chrome before the smoke-test step in
-> Task 17. The placeholders below document the **expected** selectors so the
-> JS in `OpenCodeGoAdapter.swift` is written assuming them.
+Provider: opencode go
+Login URL: https://opencode.ai/workspace/wrk_01KVB7CEDBFN8VF6FYA2DJ1GR3/go
+Usage URL: https://opencode.ai/workspace/{workspace_id}/go
 
-## Source
+## 验证方式
 
-- Entry URL: <https://opencode.ai/dashboard> (login wall appears first;
-  user logs in, lands on dashboard).
-- Quota widget location: top of dashboard, three cards labelled "5h",
-  "week", "month".
+1. Chrome DevTools Protocol (inspect 工具) 连接 Chrome
+2. 登录后在用量页刷新
+3. DOM 分析 + 网络请求捕获
 
-## DOM (verified placeholders — to be confirmed by controller)
+## 架构决策：WebViewAdapter
 
-Each quota is rendered inside a card with `data-quota` attribute plus a
-human-readable label inside the card body (e.g. "5h", "week", "month"):
+opencode go 的用量数据是完全服务端渲染（SSR）的，没有 HTTP API：
+- ❌ `/api/usage` → 404
+- ❌ `/api/ai/opencode-go/usage` → 404
+- ❌ `/api/workspace/usage` → 404
+- 所有网络请求只有字体文件（woff2）
+- ✅ WebViewAdapter + DOM 抓取是正确的方案
+
+## DOM 结构
+
+用量卡片使用 `data-slot` 属性，结构非常规整：
 
 ```html
-<div data-quota>
-  <div class="label">5h</div>
-  <div class="numbers">
-    <span data-used>80</span>
-    <span>/</span>
-    <span data-total>500</span>
-    <span class="unit">requests</span>
+<div data-slot="usage-item">
+  <div data-slot="usage-header">
+    <span data-slot="usage-label">滚动用量</span>
+    <span data-slot="usage-value">2%</span>
   </div>
+  <div data-slot="progress">
+    <div data-slot="progress-bar" style="width:2%"></div>
+  </div>
+  <span data-slot="reset-time">重置于 36 分钟</span>
 </div>
 ```
 
-## Selectors used by harvest script
+### 三个额度
 
-| Field    | Selector                                  |
-|----------|-------------------------------------------|
-| card     | `[data-quota]` (find by textContent)      |
-| used     | first child with `[data-used]`            |
-| total    | first child with `[data-total]`           |
+| 类型 | data-slot="usage-label" | 当前已用 | 重置时间 |
+|------|------------------------|---------|---------|
+| 滚动用量 | `滚动用量` | 2% | 36 分钟 |
+| 每周用量 | `每周用量` | 95% | 17 小时 41 分钟 |
+| 每月用量 | `每月用量` | 68% | 12 天 10 小时 |
 
-The harvest script searches for a `[data-quota]` card whose `.label` text
-contains "5h" / "week" / "month" and pulls `data-used` / `data-total` text
-content, both parsed as integers. It returns a JSON string like:
+## 抓取策略
 
+```javascript
+// 选择器
+const items = document.querySelectorAll('[data-slot="usage-item"]');
+// 每个 item 内：
+const label = item.querySelector('[data-slot="usage-label"]').textContent;
+const pct = parseInt(item.querySelector('[data-slot="usage-value"]').textContent);
+const reset = item.querySelector('[data-slot="reset-time"]').textContent;
 ```
-{"5h":{"used":80,"total":500},"week":{"used":...,"total":...},"month":{...}}
-```
 
-## XHR endpoints (placeholder — verify)
+## URL 说明
 
-- None observed yet. If the dashboard later switches to a fetch-on-mount
-  JSON endpoint (typical pattern), update `WebViewAdapter.parse` or
-  introduce a custom URL-interceptor in `didFinish:`. For now, harvest
-  happens entirely from the DOM.
+工作区 URL 包含用户唯一的 workspace ID：
+`https://opencode.ai/workspace/wrk_xxxxx/go`
 
-## Notes for controller (manual smoke in Task 17)
+`loginURL` 直接设为当前账号的 Go 工作区页面：
+`https://opencode.ai/workspace/wrk_01KVB7CEDBFN8VF6FYA2DJ1GR3/go`。
 
-1. Open Chrome, log into <https://opencode.ai>, reach the dashboard.
-2. Open DevTools → Elements, locate the three quota cards.
-3. Replace the placeholder selectors above with the verified ones.
-4. Confirm the three labels — they may be uppercase ("5H") or longer
-   ("5 hours", "weekly", "monthly"). Update the JS `pick(label)` calls
-   in `OpenCodeGoAdapter.swift` to match.
-5. (Optional) Network tab — watch for any `/api/...` requests whose
-   response body contains the quota numbers; if so, capture them and
-   consider switching from DOM harvest to fetch-intercept.
+旧的 `https://opencode.ai/dashboard` 已返回 404，不能作为入口。
+
+## 数值语义
+
+页面上显示的是**已用百分比**：
+- 2% 表示已用 2%
+- Adapter 直接使用页面百分比作为 `used`
+
+## 状态
+
+✅ 已验证 — 2026-07-05

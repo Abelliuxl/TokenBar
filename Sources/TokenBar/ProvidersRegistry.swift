@@ -8,7 +8,8 @@ public struct ProvidersRegistry {
         MinimaxAdapter(),
         SiliconFlowAdapter(),
         DeepSeekAdapter(),
-        VolcanoEngineAdapter()
+        VolcanoEngineAdapter(),
+        OpenRouterAdapter()
     ])
 
     @MainActor

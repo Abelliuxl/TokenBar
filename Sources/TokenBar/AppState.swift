@@ -10,10 +10,19 @@ public final class AppState: ObservableObject {
 
     public func update(snapshot: Snapshot) {
         snapshots[snapshot.providerId] = snapshot
+        if case .error(let msg) = snapshot.status {
+            AppLog.network.error("[\(snapshot.providerId, privacy: .public)] fetch error: \(msg, privacy: .public)")
+        } else if case .needsRelogin = snapshot.status {
+            AppLog.network.notice("[\(snapshot.providerId, privacy: .public)] needs relogin")
+        }
+        if lastError != snapshot.providerId {
+            AppLog.network.debug("[\(snapshot.providerId, privacy: .public)] updated → \(snapshot.quotas.count) quotas")
+        }
     }
 
     public func clear(providerId: String) {
         snapshots.removeValue(forKey: providerId)
+        AppLog.network.notice("[\(providerId)] cleared from state")
     }
 
     /// Aggregate health across all providers.

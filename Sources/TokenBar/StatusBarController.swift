@@ -7,11 +7,13 @@ public final class StatusBarController {
     public let statusItem: NSStatusItem
     private var popover: NSPopover!
     private let appState: AppState
+    private let poller: Poller
     private var cancellables = Set<AnyCancellable>()
     private let iconRenderer = IconRenderer()
 
-    public init(appState: AppState) {
+    public init(appState: AppState, poller: Poller) {
         self.appState = appState
+        self.poller = poller
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.statusItem.button?.image = iconRenderer.image(for: .ok)
 
@@ -20,11 +22,8 @@ public final class StatusBarController {
         self.popover.contentSize = .init(width: 320, height: 480)
         self.popover.contentViewController = NSHostingController(
             rootView: PopoverContentView(appState: appState,
-                                         onRefresh: { [weak appState] in
-                                             Task { @MainActor in
-                                                 guard let appState else { return }
-                                                 await Poller(appState: appState).tickOnce()
-                                             }
+                                         onRefresh: { [weak poller] in
+                                             Task { await poller?.tickOnce() }
                                          }))
 
         self.statusItem.button?.action = #selector(togglePopover(_:))
