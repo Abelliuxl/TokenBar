@@ -4,7 +4,8 @@ import Foundation
 ///
 /// ## Endpoint (verified 2026-07-05)
 /// ```
-/// GET https://console.volcengine.com/api/top/bill_volcano_engine/cn-north-1/2020-01-01/GetBalanceFromTradeBalance
+/// POST https://console.volcengine.com/api/top/bill_volcano_engine/cn-north-1/2020-01-01/GetBalanceFromTradeBalance
+/// {"ReqSysNo":"page02","GetAlertFlag":"Y"}
 /// ```
 ///
 /// Response shape:
@@ -36,9 +37,14 @@ public struct VolcanoEngineAdapter: ProviderAdapter {
         displayName: "火山引擎",
         iconSystemName: "flame.fill",
         loginURL: URL(string: "https://console.volcengine.com/finance/account-overview/")!,
-        method: "GET",
+        method: "POST",
         url: URL(string: "https://console.volcengine.com/api/top/bill_volcano_engine/cn-north-1/2020-01-01/GetBalanceFromTradeBalance")!,
-        headers: ["Accept": "application/json"],
+        headers: [
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json; charset=utf-8",
+            "x-language": "zh",
+        ],
+        body: #"{"ReqSysNo":"page02","GetAlertFlag":"Y"}"#,
         pageFallbackDecoder: { page in
             guard let balance = TextAmountParser.cnyAmount(
                 in: page.text,

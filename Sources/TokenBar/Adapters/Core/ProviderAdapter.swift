@@ -57,6 +57,9 @@ public protocol ProviderAdapter: Sendable {
 
 public enum DiagnosticPreview {
     public static func from(_ data: Data, limit: Int = 180) -> String {
+        if let structured = structuredError(from: data) {
+            return structured
+        }
         let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 \(data.count) bytes>"
         let collapsed = raw
             .replacingOccurrences(of: "\n", with: " ")
@@ -66,6 +69,35 @@ public enum DiagnosticPreview {
         if trimmed.count <= limit { return trimmed }
         let end = trimmed.index(trimmed.startIndex, offsetBy: limit)
         return String(trimmed[..<end]) + "..."
+    }
+
+    private static func structuredError(from data: Data) -> String? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        if let meta = obj["ResponseMetadata"] as? [String: Any],
+           let error = meta["Error"] as? [String: Any] {
+            let code = error["Code"] as? String
+            let message = error["Message"] as? String
+            let action = meta["Action"] as? String
+            let pieces = [
+                code.map { "Code=\($0)" },
+                message.map { "Message=\($0)" },
+                action.map { "Action=\($0)" },
+            ].compactMap(\.self)
+            if !pieces.isEmpty {
+                return pieces.joined(separator: "; ")
+            }
+        }
+        let message = (obj["message"] as? String)
+            ?? (obj["msg"] as? String)
+            ?? (obj["error_description"] as? String)
+            ?? (obj["error"] as? String)
+        if let message {
+            let code = obj["code"].map { "Code=\($0); " } ?? ""
+            return "\(code)Message=\(message)"
+        }
+        return nil
     }
 }
 

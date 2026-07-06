@@ -22,12 +22,13 @@
 #   --url <url>        Provider URL (default: "https://example.com")
 #   --port <port>      Chrome remote debugging port (default: 9222)
 #   --host <host>      Chrome host (default: localhost)
+#   --strict           Include provider-matched 4xx/5xx API responses and headers
 #   --verbose, -v      Show all JSON responses, not just matched ones
 #
 # Examples:
 #   ./scripts/inspect.sh --provider deepseek --url https://platform.deepseek.com
 #   ./scripts/inspect.sh --extract-cookies --provider deepseek --url https://platform.deepseek.com
-#   ./scripts/inspect.sh --provider volcano --url https://console.volcengine.com -v
+#   ./scripts/inspect.sh --provider volcano --url https://console.volcengine.com/finance/account-overview/ --strict -v
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -32,7 +32,9 @@ public final class AppState: ObservableObject {
     ///   - any snapshot in `.needsRelogin` or `.error(...)` → .danger
     public var overallStatus: AggregateStatus {
         var worst: AggregateStatus = .ok
+        let enabledProviderIds = SettingsStore().enabledProviderIds
         for snap in snapshots.values {
+            guard enabledProviderIds.contains(snap.providerId) else { continue }
             for q in snap.quotas {
                 if q.fraction >= 0.95 {
                     worst = max(worst, .danger)

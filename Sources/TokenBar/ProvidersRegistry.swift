@@ -9,13 +9,29 @@ public struct ProvidersRegistry {
         SiliconFlowAdapter(),
         DeepSeekAdapter(),
         VolcanoEngineAdapter(),
-        OpenRouterAdapter()
+        OpenRouterAdapter(),
+        CodexAdapter()
     ])
 
     @MainActor
     public func enabled(_ store: SettingsStore = .init()) -> [any ProviderAdapter] {
         let enabledSet = store.enabledProviderIds
-        if enabledSet.isEmpty { return adapters }
-        return adapters.filter { enabledSet.contains($0.id) }
+        return ordered(store).filter { enabledSet.contains($0.id) }
+    }
+
+    @MainActor
+    public func ordered(_ store: SettingsStore = .init()) -> [any ProviderAdapter] {
+        let order = store.providerOrderIds
+        guard !order.isEmpty else { return adapters }
+
+        var byId = Dictionary(uniqueKeysWithValues: adapters.map { ($0.id, $0) })
+        var result: [any ProviderAdapter] = []
+        for id in order {
+            if let adapter = byId.removeValue(forKey: id) {
+                result.append(adapter)
+            }
+        }
+        result.append(contentsOf: adapters.filter { byId[$0.id] != nil })
+        return result
     }
 }

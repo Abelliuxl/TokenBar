@@ -10,6 +10,7 @@ struct Args {
     var port: Int = 9222
     var host: String = "localhost"
     var verbose: Bool = false
+    var strict: Bool = false
     var extractCookies: Bool = false
 }
 
@@ -25,6 +26,7 @@ func parseArgs() -> Args {
         case "--host":           args.host = iter.next() ?? args.host
         case "--verbose":        args.verbose = true
         case "-v":               args.verbose = true
+        case "--strict":         args.strict = true
         case "--extract-cookies": args.extractCookies = true
         default: break
         }
@@ -214,6 +216,7 @@ struct ResponseInfo: Sendable {
     let method: String
     let statusCode: Int
     let mimeType: String
+    let requestHeaders: [String: String]
     let startedAt: Date
 }
 
@@ -284,6 +287,8 @@ enum InspectorMain {
 
         // Step 3: Monitor network traffic
         var allRequests: [String: ResponseInfo] = [:]
+        var requestHeadersById: [String: [String: String]] = [:]
+        var methodsById: [String: String] = [:]
         var matchedResponses: [MatchedResponse] = []
         var requestCount = 0
         var stopRequested = false
@@ -300,6 +305,15 @@ enum InspectorMain {
             if stopRequested { break }
 
             switch event.method {
+            case "Network.requestWillBeSent":
+                let params = event.params
+                guard let requestId = params["requestId"] as? String,
+                      let request = params["request"] as? [String: Any] else {
+                    continue
+                }
+                methodsById[requestId] = request["method"] as? String ?? "GET"
+                requestHeadersById[requestId] = normalizeHeaders(request["headers"] as? [String: Any] ?? [:])
+
             case "Network.responseReceived":
                 let params = event.params
                 guard let response = params["response"] as? [String: Any],
@@ -309,12 +323,23 @@ enum InspectorMain {
                       let mimeType = response["mimeType"] as? String else {
                     continue
                 }
-                let reqHeaders = response["requestHeaders"] as? [String: String]
-                let httpMethod = reqHeaders?[":method"] ?? reqHeaders?["Method"] ?? "GET"
+                let httpMethod = methodsById[requestId] ?? "GET"
+                let isInterestingURL = shouldInspectURL(url, provider: args.provider)
+                    || url.contains("/api/")
+                    || url.contains("/billing")
+                    || url.contains("/balance")
+                    || url.contains("/quota")
+                    || url.contains("/usage")
+                    || url.contains("/credit")
 
-                // Only care about successful JSON responses (not images, fonts, etc.)
-                guard statusCode >= 200 && statusCode < 300,
-                      (mimeType.contains("json") || url.contains("/api/") || url.contains("/billing") || url.contains("/balance") || args.verbose) else {
+                // Default mode keeps the old "successful JSON only" behavior.
+                // Strict mode also records interesting non-2xx API responses so
+                // provider-specific gateway errors are not hidden.
+                let shouldRecord = (statusCode >= 200 && statusCode < 300 && (mimeType.contains("json") || isInterestingURL || args.verbose))
+                    || (args.strict && isInterestingURL)
+                    || (args.verbose && (mimeType.contains("json") || isInterestingURL))
+
+                guard shouldRecord else {
                     if args.verbose {
                         print("[\(timestamp())] 📡 \(httpMethod) \(shortURL(url)) → \(statusCode) (\(mimeType))")
                     }
@@ -327,6 +352,7 @@ enum InspectorMain {
                     method: httpMethod,
                     statusCode: statusCode,
                     mimeType: mimeType,
+                    requestHeaders: requestHeadersById[requestId] ?? [:],
                     startedAt: Date()
                 )
                 allRequests[requestId] = info
@@ -364,7 +390,8 @@ enum InspectorMain {
                 }
 
                 let fields = scanForBalance(json)
-                let isUrlMatch = info.url.lowercased().contains("balance")
+                let isUrlMatch = shouldInspectURL(info.url, provider: args.provider)
+                    || info.url.lowercased().contains("balance")
                     || info.url.lowercased().contains("quota")
                     || info.url.lowercased().contains("billing")
                     || info.url.lowercased().contains("usage")
@@ -372,11 +399,16 @@ enum InspectorMain {
 
                 let isShort = decodedBody.count < 2000
 
-                if !fields.isEmpty || isUrlMatch || args.verbose {
+                if !fields.isEmpty || isUrlMatch || args.verbose || args.strict {
                     // Print real-time match
-                    let marker = fields.isEmpty ? "ℹ️" : "⚡"
-                    let reason = fields.isEmpty ? " (URL matched billing/balance pattern)" : ""
+                    let marker = info.statusCode >= 400 ? "❌" : (fields.isEmpty ? "ℹ️" : "⚡")
+                    let reason = fields.isEmpty ? " (URL matched provider/API pattern)" : ""
                     print("[\(timestamp())] \(marker) \(info.method) \(shortURL(info.url)) → \(info.statusCode)\(reason)")
+
+                    if args.strict {
+                        printInterestingHeaders(info.requestHeaders)
+                        printStructuredError(json)
+                    }
 
                     if !fields.isEmpty {
                         // Print matched fields in a compact format
@@ -464,6 +496,80 @@ func shortURL(_ url: String) -> String {
     }
     if s.hasSuffix("/") { s = String(s.dropLast()) }
     return s
+}
+
+func shouldInspectURL(_ url: String, provider: String) -> Bool {
+    let lowerURL = url.lowercased()
+    switch provider.lowercased() {
+    case "volcano":
+        return lowerURL.contains("console.volcengine.com/api/top/")
+            || lowerURL.contains("bill_volcano_engine")
+            || lowerURL.contains("getbalancefromtradebalance")
+    case "deepseek":
+        return lowerURL.contains("platform.deepseek.com/auth-api/")
+    case "siliconflow":
+        return lowerURL.contains("cloud.siliconflow.cn/")
+            && (lowerURL.contains("/api/") || lowerURL.contains("wallet"))
+    case "minimax":
+        return lowerURL.contains("minimax") && lowerURL.contains("/api/")
+    case "opencode", "opencodego", "opencode-go":
+        return lowerURL.contains("opencode") && lowerURL.contains("/api/")
+    default:
+        return lowerURL.contains("/api/")
+    }
+}
+
+func normalizeHeaders(_ headers: [String: Any]) -> [String: String] {
+    var normalized: [String: String] = [:]
+    for (key, value) in headers {
+        normalized[key] = "\(value)"
+    }
+    return normalized
+}
+
+func printInterestingHeaders(_ headers: [String: String]) {
+    guard !headers.isEmpty else { return }
+    let interesting = [
+        "accept",
+        "authorization",
+        "content-type",
+        "origin",
+        "referer",
+        "x-csrf-token",
+        "x-requested-with",
+        "x-tt-env",
+        "x-use-ppe",
+    ]
+    let lowerToOriginal = Dictionary(uniqueKeysWithValues: headers.keys.map { ($0.lowercased(), $0) })
+    var printed = false
+    for key in interesting {
+        guard let original = lowerToOriginal[key], let value = headers[original] else { continue }
+        if !printed {
+            print("     Headers:")
+            printed = true
+        }
+        let redacted = key == "authorization" ? "<redacted>" : value
+        print("       \(original): \(redacted)")
+    }
+}
+
+func printStructuredError(_ json: Any) {
+    guard let dict = json as? [String: Any] else { return }
+    if let meta = dict["ResponseMetadata"] as? [String: Any],
+       let error = meta["Error"] as? [String: Any] {
+        print("     Error:")
+        for key in ["Code", "Message", "CodeN", "Type"] {
+            if let value = error[key] {
+                print("       \(key): \(value)")
+            }
+        }
+        return
+    }
+    for key in ["code", "message", "msg", "error", "error_description"] {
+        if let value = dict[key] {
+            print("     \(key): \(value)")
+        }
+    }
 }
 
 // MARK: - Report

@@ -16,6 +16,7 @@ public final class HTTPAdapter: ProviderAdapter {
     public let method: String
     public let url: URL
     public let headers: [String: String]
+    public let body: String?
     private let decoder: @Sendable (Data) -> Snapshot
     private let pageFallbackDecoder: (@Sendable (BrowserPageContext) -> Snapshot?)?
 
@@ -26,6 +27,7 @@ public final class HTTPAdapter: ProviderAdapter {
                 method: String,
                 url: URL,
                 headers: [String: String] = [:],
+                body: String? = nil,
                 pageFallbackDecoder: (@Sendable (BrowserPageContext) -> Snapshot?)? = nil,
                 decoder: @escaping @Sendable (Data) -> Snapshot) {
         self.id = id
@@ -35,6 +37,7 @@ public final class HTTPAdapter: ProviderAdapter {
         self.method = method
         self.url = url
         self.headers = headers
+        self.body = body
         self.pageFallbackDecoder = pageFallbackDecoder
         self.decoder = decoder
     }
@@ -77,7 +80,8 @@ public final class HTTPAdapter: ProviderAdapter {
                     loginURL: loginURL,
                     targetURL: url,
                     method: method,
-                    headers: headers
+                    headers: headers,
+                    body: body
                 ) { result in
                     continuation.resume(returning: result)
                 }
@@ -110,6 +114,7 @@ private final class BrowserFetchSession: NSObject, WKNavigationDelegate {
     private let targetURL: URL
     private let method: String
     private let headers: [String: String]
+    private let body: String?
     private let completion: (BrowserFetchResult) -> Void
     private var webView: WKWebView?
     private var retainedSelf: BrowserFetchSession?
@@ -122,12 +127,14 @@ private final class BrowserFetchSession: NSObject, WKNavigationDelegate {
          targetURL: URL,
          method: String,
          headers: [String: String],
+         body: String?,
          completion: @escaping (BrowserFetchResult) -> Void) {
         self.id = id
         self.loginURL = loginURL
         self.targetURL = targetURL
         self.method = method
         self.headers = headers
+        self.body = body
         self.completion = completion
     }
 
@@ -205,6 +212,7 @@ private final class BrowserFetchSession: NSObject, WKNavigationDelegate {
         } else {
             headersJSON = "{}"
         }
+        let bodyExpression = body.map { jsString($0) } ?? "null"
         return """
         (function() {
           try {
@@ -215,7 +223,14 @@ private final class BrowserFetchSession: NSObject, WKNavigationDelegate {
             for (const key of Object.keys(headers)) {
               xhr.setRequestHeader(key, headers[key]);
             }
-            xhr.send(null);
+            const targetHost = new URL(\(jsString(targetURL.absoluteString))).hostname;
+            if (targetHost.endsWith("volcengine.com") && !Object.keys(headers).some((key) => key.toLowerCase() === "x-csrf-token")) {
+              const csrf = document.cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith("csrfToken="));
+              if (csrf) {
+                xhr.setRequestHeader("x-csrf-token", decodeURIComponent(csrf.slice("csrfToken=".length)));
+              }
+            }
+            xhr.send(\(bodyExpression));
             return JSON.stringify({
               status: xhr.status,
               body: xhr.responseText || "",

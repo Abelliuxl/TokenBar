@@ -14,7 +14,11 @@ Billing URL: https://console.volcengine.com/finance/account-overview/
 
 **Endpoint（已验证）**
 ```
-GET https://console.volcengine.com/api/top/bill_volcano_engine/cn-north-1/2020-01-01/GetBalanceFromTradeBalance
+POST https://console.volcengine.com/api/top/bill_volcano_engine/cn-north-1/2020-01-01/GetBalanceFromTradeBalance
+Content-Type: application/json; charset=utf-8
+x-language: zh
+
+{"ReqSysNo":"page02","GetAlertFlag":"Y"}
 ```
 
 **Response 结构**
@@ -82,6 +86,7 @@ GET .../GetInvoiceAccount
 ## Cookie / Auth
 
 - Cookie-based auth（session cookie）
+- 需要 `x-csrf-token` header，值来自 `csrfToken` cookie
 - 火山引擎使用 `top/bill_volcano_engine` API 网关模式
 - 所有 `/api/top/bill_volcano_engine/...` 端点共享同一个 session
 
@@ -89,8 +94,9 @@ GET .../GetInvoiceAccount
 
 VolcanoEngineAdapter 需要修改：
 - Endpoint: `console.volcengine.com/api/top/bill_volcano_engine/cn-north-1/2020-01-01/GetBalanceFromTradeBalance`
+- Method/body: `POST {"ReqSysNo":"page02","GetAlertFlag":"Y"}`
 - 字段: `response["Result"]["Acct"]["AvailableBalance"]` as String → Double
-- 不需要特殊 headers（cookie 认证即可）
+- Headers: `Content-Type: application/json; charset=utf-8`, `x-language: zh`, `x-csrf-token`
 
 ## 状态
 
