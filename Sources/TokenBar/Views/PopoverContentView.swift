@@ -11,6 +11,7 @@ public struct PopoverContentView: View {
     @State private var draggedProviderId: String?
     @State private var dropTargetProviderId: String?
     @AppStorage("tb.providerOrderIds") private var providerOrderIdsJSON: String = ""
+    @AppStorage("tb.balanceCardsPerRow") private var balanceCardsPerRow: Bool = true
     @AppStorage(CustomProviderStore.storageKey) private var customProvidersJSON: String = ""
 
     public init(appState: AppState, onRefresh: @escaping () -> Void) {
@@ -186,7 +187,7 @@ public struct PopoverContentView: View {
         var pendingBalance: (any ProviderAdapter)?
 
         for provider in providers {
-            if isBalanceProvider(provider) {
+            if balanceCardsPerRow && isBalanceProvider(provider) {
                 if let pending = pendingBalance {
                     rows.append(ProviderLayoutRow(primary: pending, secondary: provider, isBalanceRow: true))
                     pendingBalance = nil
@@ -328,6 +329,7 @@ private struct SettingsPanelView: View {
     @AppStorage("tb.launchAtLogin") private var launchAtLogin: Bool = false
     @AppStorage("tb.enabledProviderIds") private var enabledProviderIdsJSON: String = ""
     @AppStorage("tb.providerOrderIds") private var providerOrderIdsJSON: String = ""
+    @AppStorage("tb.balanceCardsPerRow") private var balanceCardsPerRow: Bool = true
     @AppStorage(CustomProviderStore.storageKey) private var customProvidersJSON: String = ""
     @State private var showingAddCustomProvider = false
     @State private var customProviderName = ""
@@ -355,6 +357,14 @@ private struct SettingsPanelView: View {
                         .onChange(of: launchAtLogin) { _, newValue in
                             Self.setLaunchAtLogin(newValue)
                         }
+                }
+
+                Section("显示") {
+                    Toggle("余额每行显示两个", isOn: $balanceCardsPerRow)
+                        .toggleStyle(.switch)
+                    Text(balanceCardsPerRow ? "两列卡片会隐藏图标，优先显示完整名称和余额。" : "余额将与进度额度一样，每项独占一行。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Provider") {
