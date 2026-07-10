@@ -9,6 +9,7 @@ public struct PopoverContentView: View {
     @State private var showingSettings = false
     @State private var draggedProviderId: String?
     @AppStorage("tb.providerOrderIds") private var providerOrderIdsJSON: String = ""
+    @AppStorage(CustomProviderStore.storageKey) private var customProvidersJSON: String = ""
 
     public init(appState: AppState, onRefresh: @escaping () -> Void) {
         self.appState = appState
@@ -24,7 +25,7 @@ public struct PopoverContentView: View {
                     onRefresh: onRefresh
                 )
             } else {
-                mainView
+                mainView.id(customProvidersJSON)
             }
         }
         .frame(width: 340)
@@ -112,7 +113,17 @@ public struct PopoverContentView: View {
     @MainActor
     private func loginFlow(for p: any ProviderAdapter) async {
         let mgr = WebViewSessionManager()
-        await mgr.startLogin(for: p)
+        let existingCustom = CustomProviderStore.definitions().first { $0.id == p.id }
+        await mgr.startLogin(for: p) { rule in
+            guard let existingCustom else { return }
+            CustomProviderStore.upsert(CustomProviderDefinition(
+                id: existingCustom.id,
+                displayName: existingCustom.displayName,
+                loginURL: existingCustom.loginURL,
+                iconSystemName: existingCustom.iconSystemName,
+                rule: rule
+            ))
+        }
         onRefresh()
     }
 
@@ -171,7 +182,7 @@ private struct ProviderReorderDropDelegate: DropDelegate {
     }
 
     private func currentOrderIds() -> [String] {
-        let defaultIds = ProvidersRegistry.default.adapters.map(\.id)
+        let defaultIds = ProvidersRegistry.default.all().map(\.id)
         guard let data = providerOrderIdsJSON.data(using: .utf8),
               let stored = try? JSONDecoder().decode([String].self, from: data),
               !stored.isEmpty else {
@@ -215,6 +226,12 @@ private struct SettingsPanelView: View {
     let onRefresh: () -> Void
     @AppStorage("tb.launchAtLogin") private var launchAtLogin: Bool = false
     @AppStorage("tb.enabledProviderIds") private var enabledProviderIdsJSON: String = ""
+    @AppStorage("tb.providerOrderIds") private var providerOrderIdsJSON: String = ""
+    @AppStorage(CustomProviderStore.storageKey) private var customProvidersJSON: String = ""
+    @State private var showingAddCustomProvider = false
+    @State private var customProviderName = ""
+    @State private var customProviderURL = ""
+    @State private var configuringCustomProvider = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -247,6 +264,57 @@ private struct SettingsPanelView: View {
                         .toggleStyle(.switch)
                     }
                 }
+
+                Section("自定义站点") {
+                    if CustomProviderStore.definitions().isEmpty {
+                        Text("还没有自定义站点")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(CustomProviderStore.definitions()) { definition in
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(definition.displayName)
+                                    Text(definition.rule.source == .dom ? "页面字段" : "接口字段")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    deleteCustomProvider(definition)
+                                } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("删除自定义站点")
+                            }
+                        }
+                    }
+
+                    if showingAddCustomProvider {
+                        TextField("站点名称", text: $customProviderName)
+                        TextField("登录网址", text: $customProviderURL)
+                        HStack {
+                            Button(configuringCustomProvider ? "等待字段选择…" : "打开并选择字段") {
+                                startCustomProviderSetup()
+                            }
+                            .disabled(configuringCustomProvider || customProviderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !isHTTPURL(customProviderURL))
+                            Button("取消") {
+                                showingAddCustomProvider = false
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    } else {
+                        Button {
+                            customProviderName = ""
+                            customProviderURL = "https://"
+                            showingAddCustomProvider = true
+                        } label: {
+                            Label("添加自定义站点", systemImage: "plus")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
             }
             .formStyle(.grouped)
 
@@ -260,14 +328,65 @@ private struct SettingsPanelView: View {
                 .buttonStyle(.borderless)
                 Spacer()
                 Button("全部开启") {
-                    setEnabledProviderIds(Set(ProvidersRegistry.default.adapters.map(\.id)))
+                    setEnabledProviderIds(Set(ProvidersRegistry.default.all().map(\.id)))
                     onRefresh()
                 }
                 .buttonStyle(.borderless)
             }
             .padding(8)
         }
-        .frame(height: 480)
+        .frame(height: 600)
+    }
+
+    private func startCustomProviderSetup() {
+        let name = customProviderName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let urlText = customProviderURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: urlText), isHTTPURL(urlText) else { return }
+
+        configuringCustomProvider = true
+        Task { @MainActor in
+            let manager = WebViewSessionManager()
+            if let rule = await manager.startCustomProviderSetup(displayName: name, loginURL: url) {
+                let definition = CustomProviderDefinition(
+                    displayName: name,
+                    loginURL: url.absoluteString,
+                    rule: rule
+                )
+                CustomProviderStore.upsert(definition)
+                var enabled = enabledProviderIds
+                enabled.insert(definition.id)
+                setEnabledProviderIds(enabled)
+                onRefresh()
+                customProviderName = ""
+                customProviderURL = ""
+                showingAddCustomProvider = false
+            }
+            configuringCustomProvider = false
+        }
+    }
+
+    private func deleteCustomProvider(_ definition: CustomProviderDefinition) {
+        CustomProviderStore.remove(id: definition.id)
+        var enabled = enabledProviderIds
+        enabled.remove(definition.id)
+        setEnabledProviderIds(enabled)
+        let order: [String]
+        if let data = providerOrderIdsJSON.data(using: .utf8),
+           let stored = try? JSONDecoder().decode([String].self, from: data) {
+            order = stored.filter { $0 != definition.id }
+        } else {
+            order = []
+        }
+        if let data = try? JSONEncoder().encode(order), let json = String(data: data, encoding: .utf8) {
+            providerOrderIdsJSON = json
+        }
+        appState.clear(providerId: definition.id)
+        onRefresh()
+    }
+
+    private func isHTTPURL(_ value: String) -> Bool {
+        guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else { return false }
+        return (scheme == "http" || scheme == "https") && url.host != nil
     }
 
     private func providerBinding(_ provider: any ProviderAdapter) -> Binding<Bool> {
@@ -306,7 +425,7 @@ private struct SettingsPanelView: View {
 
     private func clearDisabledSnapshots() {
         let enabled = enabledProviderIds
-        for provider in ProvidersRegistry.default.adapters where !enabled.contains(provider.id) {
+        for provider in ProvidersRegistry.default.all() where !enabled.contains(provider.id) {
             appState.clear(providerId: provider.id)
         }
     }

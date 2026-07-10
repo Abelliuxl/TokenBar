@@ -12,14 +12,15 @@ struct StubAdapter: ProviderAdapter {
 }
 
 final class ProvidersRegistryTests: XCTestCase {
-    func test_defaultRegistry_containsSixProviders() {
-        XCTAssertEqual(ProvidersRegistry.default.adapters.count, 6)
+    func test_defaultRegistry_containsSevenProviders() {
+        XCTAssertEqual(ProvidersRegistry.default.adapters.count, 7)
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "opencode-go" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "minimax" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "siliconflow" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "deepseek" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "volcano" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "openrouter" })
+        XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "codex" })
     }
 }
 

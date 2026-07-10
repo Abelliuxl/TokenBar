@@ -62,6 +62,18 @@ open build/TokenBar.app
 3. （可选）在 `docs/research/<id>-research.md` 写调研笔记
 4. 重跑 `./scripts/build.sh`
 
+### 自定义站点（无需改代码）
+
+设置 → 自定义站点 → 添加自定义站点，填写名称和登录网址后打开登录窗口。
+点击“选择字段”后，页面会刷新一次并同时观察两类数据：
+
+- 页面字段：从选中文字所在的 DOM 元素生成 CSS selector；
+- 接口字段：从页面后续的 fetch/XHR JSON 响应中寻找与选中文字匹配的余额、额度或用量字段。
+
+候选项会按语义、数值和选中文本的匹配程度排序。确认后，规则会保存到本机 `UserDefaults`，登录态继续使用 WKWebView 的持久 cookie store。后续轮询会使用保存的 DOM 或 API 规则，不需要为该站点新增 Swift 文件。
+
+删除自定义站点只删除 TokenBar 的配置和展示项；如需彻底清理该站点的登录 cookie，需要在系统中清理对应网站数据。
+
 合约类型在 `Sources/TokenBar/Adapters/Core/ProviderAdapter.swift`。"Provider Registry 完全硬编码"是 v1 决策，不提供 JSON/UI 配置。
 
 ## Privacy

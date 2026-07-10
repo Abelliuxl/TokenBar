@@ -38,8 +38,8 @@
 
 ## 5. 监控源（v1 必须实现）
 
-> **Provider 列表策略（v1 决策）**：Provider **完全硬编码**于源码（`Sources/TokenBar/Adapters/` 下每个 Adapter 一个 Swift 文件）。新增一个 Provider = 新增一个 Adapter Swift 文件 + 在 `ProvidersRegistry` 里登记一行 + 重新编译。**不**提供 JSON/YAML/UI 配置层添加。
-> 理由：动态配置虽灵活，但会迫使所有 Provider 退化成"通用模板"，丢掉 WKWebView 之类灵活抓取能力，且会让调试变难。个人工具，迭代频率低，硬编码更简单直接。
+> **Provider 列表策略（v1 决策）**：内置 Provider 继续硬编码于源码；同时提供“自定义站点”配置层。自定义站点保存登录 URL、字段来源和解析规则，由通用 Provider 运行时加载，不需要新增 Swift 文件。
+> 自定义字段支持两种来源：页面 DOM selector，以及登录窗口中捕获的 fetch/XHR JSON 字段路径。用户通过设置里的“选择字段”确认候选规则。
 
 | ID | 服务 | 字段 | 抓取方式 |
 |---|---|---|---|
@@ -51,8 +51,7 @@
 
 > 留 1 个 `generic-http` 占位（v1 不需要实现，但协议层预留）。
 
-> **调研方式（v1 决策）**：识别"哪段 DOM / 哪个 endpoint 是额度字段"，作者**使用外部独立工具**（Chrome DevTools、Charles、Playwright、cURL 等）手动调研，把结论写到 `docs/research/<provider>-research.md`，再据此写 Adapter。**TokenBar App 本身不带 Probe/Dev 窗口**——避免 App 体积膨胀、避免 UI 复杂度上升。
-> 优势：把"探查"和"展示"两件事彻底解耦。
+> **调研方式（v1 决策）**：内置 Provider 仍可使用外部工具调研；自定义站点则在登录窗口中提供轻量字段选择器，同时分析 DOM 和 fetch/XHR JSON 响应，用户确认后直接保存通用规则。
 
 ## 6. 架构总览
 
@@ -154,6 +153,7 @@ Poller 单例
 |---|---|---|
 | Session Cookie | Keychain（Service=`tokenbar-session`, Account=`<providerId>`） | 仅本次写入使用 `kSecAttrAccessibleAfterFirstUnlock` |
 | Provider 启用列表 / 抓取间隔 | `UserDefaults`（`@AppStorage`） | 不敏感 |
+| 自定义站点 / DOM 或 API 字段规则 | `UserDefaults`（JSON） | 仅保存 URL、selector、JSON path 和解析参数；不保存 cookie / Authorization header |
 | 最新 Snapshot 缓存 | 内存（`AppState`），每次 App 启动重新拉一次 | 不持久化快照 |
 
 > v1 不设计 "Snapshot 数据库/历史趋势"。要历史，重新进 brainstorming。
