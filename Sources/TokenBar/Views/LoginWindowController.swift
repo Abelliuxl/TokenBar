@@ -53,13 +53,15 @@ public final class LoginWindowController: NSWindowController, WKNavigationDelega
         // Use the default (persistent) website data store so cookies set during
         // login survive across app restarts and can be reused by polling.
         config.websiteDataStore = .default()
-        config.userContentController.add(self, name: "tokenBarFieldProbe")
-        config.userContentController.add(self, name: "tokenBarFieldSelection")
-        config.userContentController.addUserScript(WKUserScript(
-            source: FieldProbeScripts.networkCapture,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
-        ))
+        if onFieldRuleSelected != nil {
+            config.userContentController.add(self, name: "tokenBarFieldProbe")
+            config.userContentController.add(self, name: "tokenBarFieldSelection")
+            config.userContentController.addUserScript(WKUserScript(
+                source: FieldProbeScripts.networkCapture,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            ))
+        }
 
         self.webView = WKWebView(frame: .zero, configuration: config)
         self.webView.translatesAutoresizingMaskIntoConstraints = false

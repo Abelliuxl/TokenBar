@@ -33,8 +33,9 @@ public final class OpenRouterAdapter: WebViewAdapter {
           }
 
           let remainingCredits = null;
+          const creditLabels = ["remaining credits", "available credits", "current balance", "剩余积分", "可用积分", "余额"];
           const creditCard = Array.from(document.querySelectorAll("[aria-label]"))
-            .find((element) => (element.getAttribute("aria-label") || "").toLowerCase().includes("remaining credits"));
+            .find((element) => creditLabels.some((label) => (element.getAttribute("aria-label") || "").toLowerCase().includes(label.toLowerCase())));
           if (creditCard) {
             remainingCredits = parseNumber(creditCard.getAttribute("aria-label"));
           }
@@ -103,7 +104,10 @@ public final class OpenRouterAdapter: WebViewAdapter {
             return remaining
         }
         let text = raw["text"] as? String ?? ""
-        return strictUSD(in: text, near: ["Remaining credits", "Current balance", "Credit balance", "Available credits"])
+        return strictUSD(in: text, near: [
+            "Remaining credits", "Current balance", "Credit balance", "Available credits",
+            "剩余积分", "可用积分", "积分余额", "余额"
+        ])
     }
 
     private static func number(_ value: Any?) -> Double? {
@@ -154,7 +158,7 @@ public final class OpenRouterAdapter: WebViewAdapter {
     private static func looksLikeLoginPage(_ raw: [String: Any]) -> Bool {
         let href = (raw["href"] as? String ?? "").lowercased()
         let text = (raw["text"] as? String ?? "").lowercased()
-        return href.contains("/sign-in") || text.contains("sign in to openrouter")
+        return href.contains("/sign-in") || text.contains("sign in to openrouter") || text.contains("登录")
     }
 
     private static func pageInfo(_ raw: [String: Any]) -> String {

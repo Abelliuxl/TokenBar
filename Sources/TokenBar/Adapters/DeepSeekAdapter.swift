@@ -50,7 +50,7 @@ public struct DeepSeekAdapter: ProviderAdapter {
         pageFallbackDecoder: { page in
             guard let balance = TextAmountParser.cnyAmount(
                 in: page.text,
-                near: ["余额", "可用余额", "账户余额", "钱包余额"]
+                near: ["余额", "可用余额", "账户余额", "钱包余额", "Balance", "Available balance", "Account balance", "Wallet balance"]
             ) else {
                 return nil
             }

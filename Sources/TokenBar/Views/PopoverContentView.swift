@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import ServiceManagement
 import UniformTypeIdentifiers
 
@@ -68,7 +69,8 @@ public struct PopoverContentView: View {
                                 provider: p,
                                 snapshot: appState.snapshots[p.id],
                                 onLogin: { Task { await loginFlow(for: p) } },
-                                onRefresh: { onRefresh() }
+                                onRefresh: { onRefresh() },
+                                onOpenWebPage: { openInBrowser(p.loginURL) }
                             )
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
@@ -113,16 +115,21 @@ public struct PopoverContentView: View {
     @MainActor
     private func loginFlow(for p: any ProviderAdapter) async {
         let mgr = WebViewSessionManager()
-        let existingCustom = CustomProviderStore.definitions().first { $0.id == p.id }
-        await mgr.startLogin(for: p) { rule in
-            guard let existingCustom else { return }
-            CustomProviderStore.upsert(CustomProviderDefinition(
-                id: existingCustom.id,
-                displayName: existingCustom.displayName,
-                loginURL: existingCustom.loginURL,
-                iconSystemName: existingCustom.iconSystemName,
-                rule: rule
-            ))
+        if let existingCustom = CustomProviderStore.definitions().first(where: { $0.id == p.id }) {
+            await mgr.startLogin(for: p) { rule in
+                CustomProviderStore.upsert(CustomProviderDefinition(
+                    id: existingCustom.id,
+                    displayName: existingCustom.displayName,
+                    loginURL: existingCustom.loginURL,
+                    iconSystemName: existingCustom.iconSystemName,
+                    rule: rule
+                ))
+            }
+        } else {
+            // Built-in providers only need a clean persistent WebView login.
+            // Do not inject the custom-site network probe into third-party
+            // authentication pages; it replaces fetch/XHR and can disrupt them.
+            await mgr.startLogin(for: p)
         }
         onRefresh()
     }
@@ -134,6 +141,10 @@ public struct PopoverContentView: View {
                 draggedProviderId = nil
             }
         }
+    }
+
+    private func openInBrowser(_ url: URL) {
+        NSWorkspace.shared.open(url)
     }
 }
 
@@ -293,7 +304,19 @@ private struct SettingsPanelView: View {
 
                     if showingAddCustomProvider {
                         TextField("站点名称", text: $customProviderName)
-                        TextField("登录网址", text: $customProviderURL)
+                        HStack(spacing: 6) {
+                            TextField("登录网址", text: $customProviderURL)
+                            Button {
+                                pasteCustomProviderURL()
+                            } label: {
+                                Image(systemName: "doc.on.clipboard")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .opacity(0.65)
+                            .help("从剪贴板粘贴 URL")
+                        }
                         HStack {
                             Button(configuringCustomProvider ? "等待字段选择…" : "打开并选择字段") {
                                 startCustomProviderSetup()
@@ -387,6 +410,11 @@ private struct SettingsPanelView: View {
     private func isHTTPURL(_ value: String) -> Bool {
         guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else { return false }
         return (scheme == "http" || scheme == "https") && url.host != nil
+    }
+
+    private func pasteCustomProviderURL() {
+        guard let value = NSPasteboard.general.string(forType: .string) else { return }
+        customProviderURL = value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func providerBinding(_ provider: any ProviderAdapter) -> Binding<Bool> {

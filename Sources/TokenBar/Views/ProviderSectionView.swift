@@ -5,12 +5,18 @@ public struct ProviderSectionView: View {
     let snapshot: Snapshot?
     let onLogin: () -> Void
     let onRefresh: () -> Void
+    let onOpenWebPage: () -> Void
 
-    public init(provider: any ProviderAdapter, snapshot: Snapshot?, onLogin: @escaping () -> Void, onRefresh: @escaping () -> Void) {
+    public init(provider: any ProviderAdapter,
+                snapshot: Snapshot?,
+                onLogin: @escaping () -> Void,
+                onRefresh: @escaping () -> Void,
+                onOpenWebPage: @escaping () -> Void) {
         self.provider = provider
         self.snapshot = snapshot
         self.onLogin = onLogin
         self.onRefresh = onRefresh
+        self.onOpenWebPage = onOpenWebPage
     }
 
     public var body: some View {
@@ -51,6 +57,11 @@ public struct ProviderSectionView: View {
                     .buttonStyle(.bordered)
             }
             Divider()
+        }
+        .contextMenu {
+            Button("打开网页", systemImage: "safari") {
+                onOpenWebPage()
+            }
         }
     }
 }

@@ -48,7 +48,7 @@ public struct VolcanoEngineAdapter: ProviderAdapter {
         pageFallbackDecoder: { page in
             guard let balance = TextAmountParser.cnyAmount(
                 in: page.text,
-                near: ["可用余额", "现金余额", "账户余额", "余额"]
+                near: ["可用余额", "现金余额", "账户余额", "余额", "Available balance", "Cash balance", "Account balance", "Balance"]
             ), balance > 0 else {
                 // balance ≤ 0 → return nil so the caller won't show ¥0.00
                 // (the error snapshot from the failed decoder/HTTP status will be shown instead)

@@ -26,33 +26,47 @@ public final class OpenCodeGoAdapter: WebViewAdapter {
         (function() {
           const items = document.querySelectorAll('[data-slot="usage-item"]');
           const result = {};
-          for (const item of items) {
+          const fallbackIds = ['rolling', 'weekly', 'monthly'];
+          const idForLabel = (label, index) => {
+            const value = (label || '').toLowerCase();
+            if (value.includes('滚动') || value.includes('rolling')) return 'rolling';
+            if (value.includes('每周') || value.includes('weekly')) return 'weekly';
+            if (value.includes('每月') || value.includes('monthly')) return 'monthly';
+            // The card order is stable. This handles a future locale without
+            // making display text a data key.
+            return fallbackIds[index] || null;
+          };
+          for (const [index, item] of Array.from(items).entries()) {
             const labelEl = item.querySelector('[data-slot="usage-label"]');
             const valueEl = item.querySelector('[data-slot="usage-value"]');
             const resetEl = item.querySelector('[data-slot="reset-time"]');
             if (!labelEl || !valueEl) continue;
             const label = labelEl.textContent.trim();
+            const id = idForLabel(label, index);
+            if (!id) continue;
             // Extract the number before the '%' sign
             const pctMatch = valueEl.textContent.trim().match(/^(\\d+(?:\\.\\d+)?)/);
             if (!pctMatch) continue;
             const usedPct = parseFloat(pctMatch[1]);
             const resetText = resetEl ? resetEl.textContent.trim() : '';
-            result[label] = { used: usedPct, reset: resetText };
+            result[id] = { used: usedPct, reset: resetText };
           }
           const text = document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 180) : '';
           const fullText = document.body ? document.body.innerText.replace(/\\s+/g, ' ') : '';
-          const fillFromText = (label) => {
-            if (result[label]) return;
-            const idx = fullText.indexOf(label);
+          const fillFromText = (id, labels) => {
+            if (result[id]) return;
+            const label = labels.find((candidate) => fullText.toLowerCase().includes(candidate.toLowerCase()));
+            if (!label) return;
+            const idx = fullText.toLowerCase().indexOf(label.toLowerCase());
             if (idx < 0) return;
             const snippet = fullText.slice(idx, idx + 100);
             const match = snippet.match(/(\\d+(?:\\.\\d+)?)\\s*%/);
             if (!match) return;
-            result[label] = { used: parseFloat(match[1]), reset: '' };
+            result[id] = { used: parseFloat(match[1]), reset: '' };
           };
-          fillFromText('滚动用量');
-          fillFromText('每周用量');
-          fillFromText('每月用量');
+          fillFromText('rolling', ['滚动用量', 'Rolling usage', 'Rolling']);
+          fillFromText('weekly', ['每周用量', 'Weekly usage', 'Weekly']);
+          fillFromText('monthly', ['每月用量', 'Monthly usage', 'Monthly']);
           return JSON.stringify({
             quotas: result,
             itemCount: items.length,
@@ -76,16 +90,15 @@ public final class OpenCodeGoAdapter: WebViewAdapter {
             return Snapshot(providerId: id, quotas: [], status: .error("页面脚本返回解析失败"))
         }
 
-        // Map Chinese labels to quota IDs
-        let quotaMap: [(id: String, label: String, key: String)] = [
-            ("rolling", "滚动用量", "滚动用量"),
-            ("weekly", "每周用量", "每周用量"),
-            ("monthly", "每月用量", "每月用量"),
+        let quotaMap: [(id: String, label: String)] = [
+            ("rolling", "滚动用量"),
+            ("weekly", "每周用量"),
+            ("monthly", "每月用量"),
         ]
 
         var quotas: [Quota] = []
-        for (qid, qlabel, key) in quotaMap {
-            if let entry = raw[key],
+        for (qid, qlabel) in quotaMap {
+            if let entry = raw[qid],
                let used = Self.doubleValue(entry["used"]) {
                 quotas.append(Quota(id: qid, label: qlabel,
                                     used: used, total: 100, unit: "%",

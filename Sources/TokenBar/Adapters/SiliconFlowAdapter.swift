@@ -47,7 +47,7 @@ public struct SiliconFlowAdapter: ProviderAdapter {
             pageFallbackDecoder: { page in
                 guard let balance = TextAmountParser.cnyAmount(
                     in: page.text,
-                    near: ["当前余额", "可用余额", "账户余额", "余额"]
+                    near: ["当前余额", "可用余额", "账户余额", "余额", "Current balance", "Available balance", "Account balance", "Balance"]
                 ) else {
                     return nil
                 }

@@ -63,6 +63,74 @@ final class OpenRouterAdapterTests: XCTestCase {
     }
 }
 
+final class MinimaxAdapterTests: XCTestCase {
+    func test_parseConvertsExplicitRemainingPercentToUsedPercent() {
+        let harvest = """
+        {
+          "fiveHour": { "percent": 12, "semantic": "remaining", "reset": "2 小时后重置" },
+          "href": "https://platform.minimaxi.com/console/usage"
+        }
+        """
+
+        let snapshot = MinimaxAdapter().parse(harvest: harvest)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.first?.used, 88)
+        XCTAssertEqual(snapshot.quotas.first?.resetText, "2 小时后重置")
+    }
+
+    func test_parseKeepsHistoricalBarePercentAsUsedPercent() {
+        let harvest = """
+        {
+          "weekly": { "percent": 35, "semantic": "used" },
+          "href": "https://platform.minimaxi.com/console/usage"
+        }
+        """
+
+        let snapshot = MinimaxAdapter().parse(harvest: harvest)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.first?.used, 35)
+    }
+
+    func test_parseRejectsOutOfRangePercentInsteadOfShowingAFalseFullQuota() {
+        let harvest = """
+        {
+          "fiveHour": { "percent": 250, "semantic": "remaining" },
+          "href": "https://platform.minimaxi.com/console/usage"
+        }
+        """
+
+        let snapshot = MinimaxAdapter().parse(harvest: harvest)
+
+        XCTAssertTrue(snapshot.quotas.isEmpty)
+        guard case .error = snapshot.status else {
+            return XCTFail("Expected out-of-range percentage to fail parsing")
+        }
+    }
+}
+
+final class OpenCodeGoAdapterTests: XCTestCase {
+    func test_parseUsesStableQuotaIdsInsteadOfLocalizedLabels() {
+        let harvest = """
+        {
+          "quotas": {
+            "rolling": { "used": 2, "reset": "Resets in 30 minutes" },
+            "weekly": { "used": 42, "reset": "Resets in 4 days" },
+            "monthly": { "used": 73, "reset": "Resets in 20 days" }
+          },
+          "href": "https://opencode.ai/workspace/example/go"
+        }
+        """
+
+        let snapshot = OpenCodeGoAdapter().parse(harvest: harvest)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.map(\.id), ["rolling", "weekly", "monthly"])
+        XCTAssertEqual(snapshot.quotas.map(\.used), [2, 42, 73])
+    }
+}
+
 final class AppStateTests: XCTestCase {
     @MainActor func test_updateSnapshot_replacesExisting() {
         let state = AppState()
