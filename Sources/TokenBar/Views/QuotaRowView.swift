@@ -6,7 +6,7 @@ public struct QuotaRowView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            if quota.isMoney {
+            if quota.isCurrency {
                 HStack {
                     Text(quota.label)
                         .font(.caption)
@@ -72,11 +72,5 @@ private struct QuotaProgressBar: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("用量")
         .accessibilityValue(String(format: "%.0f%%", fraction * 100))
-    }
-}
-
-private extension Quota {
-    var isMoney: Bool {
-        unit == "¥" || unit == "$"
     }
 }

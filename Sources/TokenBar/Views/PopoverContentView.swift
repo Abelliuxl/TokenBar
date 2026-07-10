@@ -9,6 +9,7 @@ public struct PopoverContentView: View {
     @State private var refreshing = false
     @State private var showingSettings = false
     @State private var draggedProviderId: String?
+    @State private var dropTargetProviderId: String?
     @AppStorage("tb.providerOrderIds") private var providerOrderIdsJSON: String = ""
     @AppStorage(CustomProviderStore.storageKey) private var customProvidersJSON: String = ""
 
@@ -54,59 +55,52 @@ public struct PopoverContentView: View {
             Divider()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    let providers = ProvidersRegistry.default.enabled()
-                    if providers.isEmpty {
-                        ContentUnavailableView(
-                            "没有启用的 Provider",
-                            systemImage: "slider.horizontal.3",
-                            description: Text("打开设置选择要显示的服务")
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 220)
-                    } else {
-                        ForEach(providers, id: \.id) { p in
-                            ProviderSectionView(
-                                provider: p,
-                                snapshot: appState.snapshots[p.id],
-                                onLogin: { Task { await loginFlow(for: p) } },
-                                onRefresh: { onRefresh() },
-                                onOpenWebPage: { openInBrowser(p.loginURL) }
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                            .opacity(draggedProviderId == p.id ? 0.45 : 1)
-                            .scaleEffect(draggedProviderId == p.id ? 0.985 : 1)
-                            .animation(.easeInOut(duration: 0.16), value: draggedProviderId)
-                            .onDrag {
-                                beginProviderDrag(p.id)
-                                return NSItemProvider(object: p.id as NSString)
-                            } preview: {
-                                ProviderDragPreview(provider: p)
+                let providers = ProvidersRegistry.default.enabled()
+                if providers.isEmpty {
+                    ContentUnavailableView(
+                        "没有启用的 Provider",
+                        systemImage: "slider.horizontal.3",
+                        description: Text("打开设置选择要显示的服务")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 220)
+                    .padding()
+                } else {
+                    Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                        ForEach(providerRows(from: providers)) { row in
+                            if row.isBalanceRow {
+                                GridRow {
+                                    providerTile(row.primary, compactBalance: true)
+                                    if let secondary = row.secondary {
+                                        providerTile(secondary, compactBalance: true)
+                                    } else {
+                                        Color.clear
+                                    }
+                                }
+                            } else {
+                                GridRow {
+                                    providerTile(row.primary, compactBalance: false)
+                                        .gridCellColumns(2)
+                                }
                             }
-                            .onDrop(
-                                of: [.text],
-                                delegate: ProviderReorderDropDelegate(
-                                    targetProviderId: p.id,
-                                    draggedProviderId: $draggedProviderId,
-                                    providerOrderIdsJSON: $providerOrderIdsJSON
-                                )
-                            )
                         }
                     }
+                    .padding()
+                    .animation(.easeInOut(duration: 0.18), value: providers.map(\.id))
+                    .onDrop(
+                        of: [.text],
+                        delegate: ProviderDragResetDropDelegate(
+                            draggedProviderId: $draggedProviderId,
+                            dropTargetProviderId: $dropTargetProviderId
+                        )
+                    )
                 }
-                .padding()
-                .animation(.easeInOut(duration: 0.18), value: ProvidersRegistry.default.enabled().map(\.id))
-                .onDrop(
-                    of: [.text],
-                    delegate: ProviderDragResetDropDelegate(draggedProviderId: $draggedProviderId)
-                )
             }
 
             Divider()
             HStack(spacing: 8) {
                 Spacer()
                 Button("退出") { NSApp.terminate(nil) }.buttonStyle(.borderless)
-                Text("v0.1").font(.caption2).foregroundStyle(.secondary)
+                Text(AppVersion.display).font(.caption2).foregroundStyle(.secondary)
             }
             .padding(8)
         }
@@ -136,15 +130,100 @@ public struct PopoverContentView: View {
 
     private func beginProviderDrag(_ providerId: String) {
         draggedProviderId = providerId
+        dropTargetProviderId = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
             if draggedProviderId == providerId {
                 draggedProviderId = nil
+                dropTargetProviderId = nil
             }
         }
     }
 
     private func openInBrowser(_ url: URL) {
         NSWorkspace.shared.open(url)
+    }
+
+    @ViewBuilder
+    private func providerTile(_ provider: any ProviderAdapter, compactBalance: Bool) -> some View {
+        ProviderSectionView(
+            provider: provider,
+            snapshot: appState.snapshots[provider.id],
+            onLogin: { Task { await loginFlow(for: provider) } },
+            onRefresh: { onRefresh() },
+            onOpenWebPage: { openInBrowser(provider.loginURL) },
+            compactBalance: compactBalance
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(RoundedRectangle(cornerRadius: compactBalance ? 9 : 6, style: .continuous))
+        .opacity(draggedProviderId == provider.id ? 0.45 : 1)
+        .scaleEffect(draggedProviderId == provider.id ? 0.985 : 1)
+        .overlay {
+            RoundedRectangle(cornerRadius: compactBalance ? 9 : 6, style: .continuous)
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [5, 3]))
+                .opacity(dropTargetProviderId == provider.id && draggedProviderId != provider.id ? 1 : 0)
+        }
+        .animation(.easeInOut(duration: 0.16), value: draggedProviderId)
+        .animation(.easeInOut(duration: 0.16), value: dropTargetProviderId)
+        .onDrag {
+            beginProviderDrag(provider.id)
+            return NSItemProvider(object: provider.id as NSString)
+        } preview: {
+            ProviderDragPreview(provider: provider)
+        }
+        .onDrop(
+            of: [.text],
+            delegate: ProviderReorderDropDelegate(
+                targetProviderId: provider.id,
+                draggedProviderId: $draggedProviderId,
+                dropTargetProviderId: $dropTargetProviderId,
+                providerOrderIdsJSON: $providerOrderIdsJSON
+            )
+        )
+    }
+
+    private func providerRows(from providers: [any ProviderAdapter]) -> [ProviderLayoutRow] {
+        var rows: [ProviderLayoutRow] = []
+        var pendingBalance: (any ProviderAdapter)?
+
+        for provider in providers {
+            if isBalanceProvider(provider) {
+                if let pending = pendingBalance {
+                    rows.append(ProviderLayoutRow(primary: pending, secondary: provider, isBalanceRow: true))
+                    pendingBalance = nil
+                } else {
+                    pendingBalance = provider
+                }
+            } else {
+                if let pending = pendingBalance {
+                    rows.append(ProviderLayoutRow(primary: pending, secondary: nil, isBalanceRow: true))
+                    pendingBalance = nil
+                }
+                rows.append(ProviderLayoutRow(primary: provider, secondary: nil, isBalanceRow: false))
+            }
+        }
+        if let pendingBalance {
+            rows.append(ProviderLayoutRow(primary: pendingBalance, secondary: nil, isBalanceRow: true))
+        }
+        return rows
+    }
+
+    private func isBalanceProvider(_ provider: any ProviderAdapter) -> Bool {
+        guard let snapshot = appState.snapshots[provider.id],
+              case .ok = snapshot.status,
+              !snapshot.quotas.isEmpty else {
+            return false
+        }
+        return snapshot.quotas.allSatisfy(\.isCurrency)
+    }
+}
+
+private struct ProviderLayoutRow: Identifiable {
+    let primary: any ProviderAdapter
+    let secondary: (any ProviderAdapter)?
+    let isBalanceRow: Bool
+
+    var id: String {
+        [primary.id, secondary?.id ?? "empty", isBalanceRow ? "balance" : "full"].joined(separator: "-")
     }
 }
 
@@ -168,10 +247,12 @@ private struct ProviderDragPreview: View {
 private struct ProviderReorderDropDelegate: DropDelegate {
     let targetProviderId: String
     @Binding var draggedProviderId: String?
+    @Binding var dropTargetProviderId: String?
     @Binding var providerOrderIdsJSON: String
 
     func dropEntered(info: DropInfo) {
         guard let draggedProviderId, draggedProviderId != targetProviderId else { return }
+        dropTargetProviderId = targetProviderId
         var ids = currentOrderIds()
         guard let from = ids.firstIndex(of: draggedProviderId),
               let to = ids.firstIndex(of: targetProviderId) else {
@@ -185,7 +266,14 @@ private struct ProviderReorderDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         draggedProviderId = nil
+        dropTargetProviderId = nil
         return true
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropTargetProviderId == targetProviderId {
+            dropTargetProviderId = nil
+        }
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
@@ -220,9 +308,11 @@ private struct ProviderReorderDropDelegate: DropDelegate {
 
 private struct ProviderDragResetDropDelegate: DropDelegate {
     @Binding var draggedProviderId: String?
+    @Binding var dropTargetProviderId: String?
 
     func performDrop(info: DropInfo) -> Bool {
         draggedProviderId = nil
+        dropTargetProviderId = nil
         return true
     }
 

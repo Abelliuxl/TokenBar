@@ -12,6 +12,18 @@ MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 ICONSET_DIR="$PROJECT_DIR/Resources/AppIcon.iconset"
 ICON_FILE="$PROJECT_DIR/Resources/AppIcon.icns"
+VERSION_FILE="$PROJECT_DIR/VERSION"
+
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "Missing VERSION file: $VERSION_FILE" >&2
+  exit 1
+fi
+MARKETING_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+if [[ ! "$MARKETING_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "VERSION must use MAJOR.MINOR.PATCH, got: $MARKETING_VERSION" >&2
+  exit 1
+fi
+BUILD_NUMBER="${BUILD_NUMBER:-$(git -C "$PROJECT_DIR" rev-list --count HEAD 2>/dev/null || echo 1)}"
 
 # Pre-build secret scan.
 "$PROJECT_DIR/scripts/secret_scan.sh"
@@ -42,6 +54,8 @@ SWIFT_FILES=$(find "$PROJECT_DIR/Sources" -name "*.swift" | sort)
   -o "$MACOS_DIR/$APP_NAME"
 
 cp "$PROJECT_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $MARKETING_VERSION" "$CONTENTS_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$CONTENTS_DIR/Info.plist"
 cp -R "$ICON_FILE" "$RESOURCES_DIR/"
 plutil -lint "$CONTENTS_DIR/Info.plist" >/dev/null
 
@@ -50,4 +64,4 @@ if command -v codesign >/dev/null 2>&1; then
   codesign --force --sign - "$APP_DIR" >/dev/null
 fi
 
-echo "Built: $APP_DIR"
+echo "Built: $APP_DIR (v$MARKETING_VERSION build $BUILD_NUMBER)"

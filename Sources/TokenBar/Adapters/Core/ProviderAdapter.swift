@@ -29,6 +29,10 @@ public struct Quota: Identifiable, Sendable, Equatable {
         guard total > 0 else { return 0 }
         return min(1.0, used / total)
     }
+
+    public var isCurrency: Bool {
+        unit == "¥" || unit == "$"
+    }
 }
 
 public struct Snapshot: Sendable, Equatable {

@@ -12,6 +12,10 @@ macOS menu bar app that shows your AI / cloud service quotas at a glance.
 open build/TokenBar.app
 ```
 
+## Versioning
+
+`VERSION` 是唯一的营销版本来源，使用 `MAJOR.MINOR.PATCH`：破坏兼容性时升级 major，新增可见功能时升级 minor，修复时升级 patch。`scripts/build.sh` 会把该版本写入 app，并以当前 Git 提交数生成递增的 build number；菜单栏面板会同时显示两者。每个发布版本使用对应的 Git tag（如 `v0.1.1`）。
+
 首次使用：
 1. 点击菜单栏的 TokenBar 图标 → 下拉面板展开
 2. 每个 Provider 在未登录状态显示"登录"按钮
