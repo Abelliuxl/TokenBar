@@ -1,40 +1,23 @@
 import Foundation
-import Security
 
+/// Simple credential store backed by `UserDefaults`.
+/// Avoids Keychain so the ad-hoc signed app never triggers a Keychain
+/// authorization prompt.
+///
+/// These are API keys stored as plaintext in the app's preferences plist.
+/// If you need stronger protection, replace this backend with Keychain once
+/// the app has a stable code-signing identity.
 public enum ProviderCredentialStore {
-    private static let service = "com.liuxiaoliang.tokenbar.provider-credentials"
+    private static let keyPrefix = "tb.credential"
 
     public static func value(providerId: String, modeId: String, fieldId: String) -> String? {
-        let account = account(providerId: providerId, modeId: modeId, fieldId: fieldId)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnData as String: true,
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
+        UserDefaults.standard.string(forKey: prefixedKey(providerId, modeId, fieldId))
     }
 
     @discardableResult
     public static func setValue(_ value: String, providerId: String, modeId: String, fieldId: String) -> Bool {
-        let account = account(providerId: providerId, modeId: modeId, fieldId: fieldId)
-        let identity: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        let data = Data(value.utf8)
-        let updateStatus = SecItemUpdate(identity as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if updateStatus == errSecSuccess { return true }
-        guard updateStatus == errSecItemNotFound else { return false }
-        var insertion = identity
-        insertion[kSecValueData as String] = data
-        insertion[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        return SecItemAdd(insertion as CFDictionary, nil) == errSecSuccess
+        UserDefaults.standard.set(value, forKey: prefixedKey(providerId, modeId, fieldId))
+        return true
     }
 
     public static func hasCredentials(providerId: String, mode: ProviderFetchMode) -> Bool {
@@ -44,7 +27,7 @@ public enum ProviderCredentialStore {
         }
     }
 
-    private static func account(providerId: String, modeId: String, fieldId: String) -> String {
-        "\(providerId).\(modeId).\(fieldId)"
+    private static func prefixedKey(_ providerId: String, _ modeId: String, _ fieldId: String) -> String {
+        "\(keyPrefix).\(providerId).\(modeId).\(fieldId)"
     }
 }
