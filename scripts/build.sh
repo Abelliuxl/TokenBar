@@ -49,7 +49,7 @@ SWIFT_FILES=$(find "$PROJECT_DIR/Sources" -name "*.swift" | sort)
   -Osize \
   -whole-module-optimization \
   -parse-as-library \
-  -framework AppKit -framework SwiftUI -framework WebKit \
+  -framework AppKit -framework SwiftUI -framework WebKit -framework Security \
   $SWIFT_FILES \
   -o "$MACOS_DIR/$APP_NAME"
 

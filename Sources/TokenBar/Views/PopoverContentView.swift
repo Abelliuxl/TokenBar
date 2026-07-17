@@ -331,6 +331,7 @@ private struct SettingsPanelView: View {
     @AppStorage("tb.providerOrderIds") private var providerOrderIdsJSON: String = ""
     @AppStorage("tb.balanceCardsPerRow") private var balanceCardsPerRow: Bool = true
     @AppStorage(CustomProviderStore.storageKey) private var customProvidersJSON: String = ""
+    @AppStorage(DiagnosticLog.enabledKey) private var diagnosticLoggingEnabled: Bool = false
     @State private var showingAddCustomProvider = false
     @State private var customProviderName = ""
     @State private var customProviderURL = ""
@@ -365,6 +366,29 @@ private struct SettingsPanelView: View {
                     Text(balanceCardsPerRow ? "两列卡片会隐藏图标，优先显示完整名称和余额。" : "余额将与进度额度一样，每项独占一行。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+
+                Section("诊断") {
+                    Toggle("保存诊断日志", isOn: $diagnosticLoggingEnabled)
+                        .toggleStyle(.switch)
+                        .onChange(of: diagnosticLoggingEnabled) { _, enabled in
+                            if enabled { DiagnosticLog.enabled() }
+                        }
+                    Text("默认关闭。开启后会记录抓取阶段和错误原因，但不会保存 Cookie、页面正文或接口响应内容。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if diagnosticLoggingEnabled {
+                        HStack {
+                            Button("打开日志文件夹") {
+                                try? FileManager.default.createDirectory(at: DiagnosticLog.directoryURL, withIntermediateDirectories: true)
+                                NSWorkspace.shared.open(DiagnosticLog.directoryURL)
+                            }
+                            .buttonStyle(.borderless)
+                            Spacer()
+                            Button("清空日志") { DiagnosticLog.clear() }
+                                .buttonStyle(.borderless)
+                        }
+                    }
                 }
 
                 Section("Provider") {

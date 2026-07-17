@@ -12,8 +12,12 @@ public final class AppState: ObservableObject {
         snapshots[snapshot.providerId] = snapshot
         if case .error(let msg) = snapshot.status {
             AppLog.network.error("[\(snapshot.providerId, privacy: .public)] fetch error: \(msg, privacy: .public)")
+            DiagnosticLog.record("result", "provider=\(snapshot.providerId) status=error reason=\(msg)")
         } else if case .needsRelogin = snapshot.status {
             AppLog.network.notice("[\(snapshot.providerId, privacy: .public)] needs relogin")
+            DiagnosticLog.record("result", "provider=\(snapshot.providerId) status=needsRelogin")
+        } else {
+            DiagnosticLog.record("result", "provider=\(snapshot.providerId) status=ok quotas=\(snapshot.quotas.count)")
         }
         if lastError != snapshot.providerId {
             AppLog.network.debug("[\(snapshot.providerId, privacy: .public)] updated → \(snapshot.quotas.count) quotas")

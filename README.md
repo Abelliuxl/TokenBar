@@ -80,9 +80,18 @@ open build/TokenBar.app
 
 合约类型在 `Sources/TokenBar/Adapters/Core/ProviderAdapter.swift`。"Provider Registry 完全硬编码"是 v1 决策，不提供 JSON/UI 配置。
 
+## 火山引擎获取模式
+
+右键火山引擎卡片，打开“爬取模式”二级菜单，可以选择：
+
+- **网页登录**：使用 WKWebView 的控制台登录态和控制台余额接口。
+- **开放 API**：使用火山引擎费用中心 `QueryBalanceAcct` OpenAPI，不依赖网页登录态。
+
+首次选择“开放 API”会要求填写 Access Key ID 和 Secret Access Key。凭据仅保存在本机 macOS 钥匙串；再次点击已选中的“开放 API”可以修改凭据。建议为 TokenBar 创建仅有费用中心只读权限的 IAM 子账号密钥。
+
 ## Privacy
 
-- 登录态由 **WKWebView persistent website data store** 保存；App 不读写 macOS Keychain
+- 登录态由 **WKWebView persistent website data store** 保存；开放 API 凭据保存在 macOS Keychain
 - 没有任何 telemetry、上报、远端统计
 - 出站网络流量**仅**到各 Provider 自己的域名（WKWebView 登录页 / API endpoint）
 - `secret_scan.sh` 在 build 前扫描源码，确保没有真实 secret 泄漏到 git

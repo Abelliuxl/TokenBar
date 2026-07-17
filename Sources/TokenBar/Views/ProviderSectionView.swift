@@ -7,6 +7,8 @@ public struct ProviderSectionView: View {
     let onRefresh: () -> Void
     let onOpenWebPage: () -> Void
     let compactBalance: Bool
+    @State private var credentialMode: ProviderFetchMode?
+    @State private var selectedModeId: String
 
     public init(provider: any ProviderAdapter,
                 snapshot: Snapshot?,
@@ -20,6 +22,11 @@ public struct ProviderSectionView: View {
         self.onRefresh = onRefresh
         self.onOpenWebPage = onOpenWebPage
         self.compactBalance = compactBalance
+        if let multiMode = provider as? any MultiModeProviderAdapter {
+            _selectedModeId = State(initialValue: ProviderFetchModeStore.selectedModeId(for: multiMode))
+        } else {
+            _selectedModeId = State(initialValue: "")
+        }
     }
 
     public var body: some View {
@@ -34,6 +41,46 @@ public struct ProviderSectionView: View {
             Button("打开网页", systemImage: "safari") {
                 onOpenWebPage()
             }
+            if let multiMode = provider as? any MultiModeProviderAdapter {
+                Menu("爬取模式", systemImage: "arrow.triangle.branch") {
+                    ForEach(multiMode.fetchModes) { mode in
+                        Button {
+                            choose(mode: mode, provider: multiMode)
+                        } label: {
+                            if selectedModeId == mode.id {
+                                Label(mode.title, systemImage: "checkmark")
+                            } else {
+                                Text(mode.title)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(item: $credentialMode) { mode in
+            ProviderCredentialsView(providerId: provider.id, mode: mode) {
+                ProviderFetchModeStore.setSelectedModeId(mode.id, providerId: provider.id)
+                selectedModeId = mode.id
+                credentialMode = nil
+                onRefresh()
+            } onCancel: {
+                credentialMode = nil
+            }
+        }
+    }
+
+    private func choose(mode: ProviderFetchMode, provider: any MultiModeProviderAdapter) {
+        // Selecting the already-active credential mode doubles as "edit credentials".
+        if selectedModeId == mode.id && !mode.credentialFields.isEmpty {
+            credentialMode = mode
+            return
+        }
+        if mode.credentialFields.isEmpty || ProviderCredentialStore.hasCredentials(providerId: provider.id, mode: mode) {
+            ProviderFetchModeStore.setSelectedModeId(mode.id, providerId: provider.id)
+            selectedModeId = mode.id
+            onRefresh()
+        } else {
+            credentialMode = mode
         }
     }
 
@@ -96,5 +143,67 @@ public struct ProviderSectionView: View {
             }
             .buttonStyle(.borderless)
         }
+    }
+}
+
+private struct ProviderCredentialsView: View {
+    let providerId: String
+    let mode: ProviderFetchMode
+    let onSave: () -> Void
+    let onCancel: () -> Void
+    @State private var values: [String: String] = [:]
+    @State private var saveFailed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("配置\(mode.title)").font(.headline)
+            Text("凭据只保存在这台 Mac 的钥匙串中。")
+                .font(.caption).foregroundStyle(.secondary)
+            ForEach(mode.credentialFields) { field in
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(field.title).font(.caption)
+                    if field.isSecret {
+                        SecureField(field.placeholder, text: binding(for: field.id))
+                            .textFieldStyle(.roundedBorder)
+                    } else {
+                        TextField(field.placeholder, text: binding(for: field.id))
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+            }
+            if saveFailed {
+                Text("写入 macOS 钥匙串失败。").font(.caption).foregroundStyle(.red)
+            }
+            HStack {
+                Button("取消", action: onCancel)
+                Spacer()
+                Button("保存并切换") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(mode.credentialFields.contains { (values[$0.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
+        .onAppear {
+            for field in mode.credentialFields {
+                values[field.id] = ProviderCredentialStore.value(providerId: providerId, modeId: mode.id, fieldId: field.id) ?? ""
+            }
+        }
+    }
+
+    private func binding(for fieldId: String) -> Binding<String> {
+        Binding(get: { values[fieldId] ?? "" }, set: { values[fieldId] = $0 })
+    }
+
+    private func save() {
+        let saved = mode.credentialFields.allSatisfy { field in
+            ProviderCredentialStore.setValue(
+                (values[field.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+                providerId: providerId,
+                modeId: mode.id,
+                fieldId: field.id
+            )
+        }
+        if saved { onSave() } else { saveFailed = true }
     }
 }

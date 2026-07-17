@@ -59,6 +59,52 @@ public protocol ProviderAdapter: Sendable {
     func fetch() async -> Snapshot
 }
 
+public struct ProviderFetchMode: Identifiable, Sendable, Equatable {
+    public let id: String
+    public let title: String
+    public let credentialFields: [ProviderCredentialField]
+
+    public init(id: String, title: String, credentialFields: [ProviderCredentialField] = []) {
+        self.id = id
+        self.title = title
+        self.credentialFields = credentialFields
+    }
+}
+
+public struct ProviderCredentialField: Identifiable, Sendable, Equatable {
+    public let id: String
+    public let title: String
+    public let placeholder: String
+    public let isSecret: Bool
+
+    public init(id: String, title: String, placeholder: String = "", isSecret: Bool = false) {
+        self.id = id
+        self.title = title
+        self.placeholder = placeholder
+        self.isSecret = isSecret
+    }
+}
+
+/// Adopted by built-in providers that can obtain the same quota in more than one way.
+/// The selected mode is persisted per provider by `ProviderFetchModeStore`.
+public protocol MultiModeProviderAdapter: ProviderAdapter {
+    var fetchModes: [ProviderFetchMode] { get }
+    var defaultFetchModeId: String { get }
+}
+
+public enum ProviderFetchModeStore {
+    public static func key(providerId: String) -> String { "tb.fetchMode.\(providerId)" }
+
+    public static func selectedModeId(for provider: any MultiModeProviderAdapter) -> String {
+        let saved = UserDefaults.standard.string(forKey: key(providerId: provider.id))
+        return provider.fetchModes.contains(where: { $0.id == saved }) ? saved! : provider.defaultFetchModeId
+    }
+
+    public static func setSelectedModeId(_ modeId: String, providerId: String) {
+        UserDefaults.standard.set(modeId, forKey: key(providerId: providerId))
+    }
+}
+
 public enum DiagnosticPreview {
     public static func from(_ data: Data, limit: Int = 180) -> String {
         if let structured = structuredError(from: data) {

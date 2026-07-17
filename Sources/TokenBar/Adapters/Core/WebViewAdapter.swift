@@ -25,6 +25,7 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
     private var currentWebView: WKWebView?
     private var continuation: CheckedContinuation<Snapshot, Never>?
     private var didEvaluate = false
+    private var harvestAttempt = 0
     private var pendingEvaluation: DispatchWorkItem?
     private var timeout: DispatchWorkItem?
 
@@ -36,6 +37,7 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
 
     public func fetch() async -> Snapshot {
         AppLog.network.debug("[\(self.id)] WebView loading \(self.loginURL.absoluteString)")
+        DiagnosticLog.record("webview", "provider=\(id) fetch requested url=\(DiagnosticLog.safeURL(loginURL.absoluteString))")
         return await withCheckedContinuation { cont in
             // WKWebView APIs must run on the main thread. If we're already
             // there (e.g. called from MainActor), just proceed; otherwise
@@ -47,10 +49,12 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
                 }
                 self.continuation = cont
                 self.didEvaluate = false
+                self.harvestAttempt = 0
                 let config = WKWebViewConfiguration()
                 config.websiteDataStore = .default()
                 let webView = WKWebView(frame: .init(x: 0, y: 0, width: 1280, height: 800), configuration: config)
                 self.currentWebView = webView
+                DiagnosticLog.record("webview", "provider=\(self.id) created")
                 webView.navigationDelegate = self
                 self.scheduleTimeout()
                 webView.load(URLRequest(url: self.loginURL))
@@ -64,6 +68,7 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
         guard !didEvaluate else { return }
         pendingEvaluation?.cancel()
         AppLog.network.debug("[\(self.id)] Page navigation finished at \(webView.url?.absoluteString ?? "<nil>"), waiting for idle")
+        DiagnosticLog.record("webview", "provider=\(id) navigation finished url=\(DiagnosticLog.safeURL(webView.url?.absoluteString)); waiting=3s")
         let item = DispatchWorkItem { [weak self, weak webView] in
             guard let self, let webView else { return }
             guard !self.didEvaluate else { return }
@@ -80,15 +85,29 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
     }
 
     private func evaluateHarvestScript(in webView: WKWebView) {
+        harvestAttempt += 1
         webView.evaluateJavaScript(harvestScript) { [weak self] result, error in
             guard let self else { return }
             if let error {
                 AppLog.network.warning("[\(self.id)] JS harvest error: \(error.localizedDescription)")
+                DiagnosticLog.record("webview", "provider=\(self.id) javascript failed error=\(error.localizedDescription)")
                 self.finish(Snapshot(providerId: self.id, quotas: [],
                     status: .error("js: \(error.localizedDescription)")))
                 return
             }
             AppLog.network.debug("[\(self.id)] JS harvest succeeded")
+            DiagnosticLog.record("webview", "provider=\(self.id) javascript completed resultType=\(String(describing: type(of: result)))")
+            if self.shouldRetry(harvest: result), self.harvestAttempt < self.maximumHarvestAttempts {
+                let attempt = self.harvestAttempt
+                DiagnosticLog.record("webview", "provider=\(self.id) target not ready; retry=\(attempt)/\(self.maximumHarvestAttempts) in \(self.harvestRetryDelay)s")
+                let item = DispatchWorkItem { [weak self, weak webView] in
+                    guard let self, let webView, self.continuation != nil else { return }
+                    self.evaluateHarvestScript(in: webView)
+                }
+                self.pendingEvaluation = item
+                DispatchQueue.main.asyncAfter(deadline: .now() + self.harvestRetryDelay, execute: item)
+                return
+            }
             let snap = self.parse(harvest: result)
             self.finish(snap)
         }
@@ -96,6 +115,7 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
 
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         AppLog.network.error("[\(self.id)] Navigation failed: \(error.localizedDescription)")
+        DiagnosticLog.record("webview", "provider=\(id) navigation failed url=\(DiagnosticLog.safeURL(webView.url?.absoluteString)) error=\(error.localizedDescription)")
         finish(Snapshot(providerId: id, quotas: [],
             status: .error("nav: \(error.localizedDescription)")))
     }
@@ -107,6 +127,7 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
     private func scheduleTimeout() {
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            DiagnosticLog.record("webview", "provider=\(self.id) timed out after 45s url=\(DiagnosticLog.safeURL(self.currentWebView?.url?.absoluteString))")
             self.finish(Snapshot(providerId: self.id, quotas: [], status: .error("timeout")))
         }
         timeout = item
@@ -132,4 +153,14 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
 
     /// Subclasses parse the JS harvest into a Snapshot.
     public func parse(harvest: Any?) -> Snapshot { fatalError("override") }
+
+    /// Subclasses for asynchronously rendered pages can opt into repeated harvests.
+    public var maximumHarvestAttempts: Int { 1 }
+    public var harvestRetryDelay: TimeInterval { 1 }
+    public func shouldRetry(harvest: Any?) -> Bool { false }
+
+    public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        DiagnosticLog.record("webview", "provider=\(id) web content process terminated url=\(DiagnosticLog.safeURL(webView.url?.absoluteString))")
+        finish(Snapshot(providerId: id, quotas: [], status: .error("网页进程已终止")))
+    }
 }

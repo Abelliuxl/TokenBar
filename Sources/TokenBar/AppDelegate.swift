@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         AppLog.lifecycle.notice("App did finish launching")
+        DiagnosticLog.record("lifecycle", "app launched; appVersion=\(AppVersion.display) os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
         // Sync launch-at-login preference with actual system state
         // (handles the case where the user changed it in System Settings)
         syncLaunchAtLoginStatus()
@@ -31,6 +32,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         AppLog.lifecycle.notice("App will terminate")
+        DiagnosticLog.record("lifecycle", "app will terminate")
         Task { await poller.stop() }
     }
 }

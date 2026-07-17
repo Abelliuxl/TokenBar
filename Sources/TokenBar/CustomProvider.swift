@@ -183,12 +183,28 @@ private final class CustomDOMAdapter: WebViewAdapter {
         }
         guard let text = root["value"] as? String, !text.isEmpty else {
             let href = root["href"] as? String ?? ""
+            DiagnosticLog.record("custom", "provider=\(definition.id) selectorFound=false finalURL=\(DiagnosticLog.safeURL(href)) selector=\(definition.rule.domSelector ?? "<nil>")")
             if href.lowercased().contains("login") || href.lowercased().contains("signin") {
                 return Snapshot(providerId: definition.id, quotas: [], status: .needsRelogin)
             }
             return Snapshot(providerId: definition.id, quotas: [], status: .error("页面中未找到已保存的字段"))
         }
+        DiagnosticLog.record("custom", "provider=\(definition.id) selectorFound=true finalURL=\(DiagnosticLog.safeURL(root["href"] as? String)) valueLength=\(text.count)")
         return CustomProviderRuntime.snapshot(providerId: definition.id, rule: definition.rule, text: text)
+    }
+
+    override var maximumHarvestAttempts: Int { 20 }
+
+    override func shouldRetry(harvest: Any?) -> Bool {
+        guard let json = harvest as? String,
+              let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        let value = (root["value"] as? String) ?? ""
+        let href = ((root["href"] as? String) ?? "").lowercased()
+        let isLoginPage = href.contains("login") || href.contains("signin")
+        return value.isEmpty && !isLoginPage
     }
 }
 

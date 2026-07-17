@@ -26,11 +26,23 @@ import Foundation
 /// The primary balance field is `Result.Acct.AvailableBalance` (String → Double, CNY).
 ///
 /// See `docs/research/volcano-research.md` for details.
-public struct VolcanoEngineAdapter: ProviderAdapter {
+public struct VolcanoEngineAdapter: MultiModeProviderAdapter {
     public let id = "volcano"
     public var displayName: String { "火山引擎" }
     public var iconSystemName: String { "flame.fill" }
     public var loginURL: URL { URL(string: "https://console.volcengine.com/finance/account-overview/")! }
+    public let defaultFetchModeId = "webSession"
+    public let fetchModes = [
+        ProviderFetchMode(id: "webSession", title: "网页登录"),
+        ProviderFetchMode(
+            id: "openAPI",
+            title: "开放 API",
+            credentialFields: [
+                ProviderCredentialField(id: "accessKey", title: "Access Key ID", placeholder: "AK..."),
+                ProviderCredentialField(id: "secretKey", title: "Secret Access Key", placeholder: "仅保存在本机钥匙串", isSecret: true),
+            ]
+        ),
+    ]
 
     private let inner = HTTPAdapter(
         id: "volcano",
@@ -80,5 +92,15 @@ public struct VolcanoEngineAdapter: ProviderAdapter {
         }
     )
 
-    public func fetch() async -> Snapshot { await inner.fetch() }
+    public func fetch() async -> Snapshot {
+        guard ProviderFetchModeStore.selectedModeId(for: self) == "openAPI" else {
+            return await inner.fetch()
+        }
+        guard let accessKey = ProviderCredentialStore.value(providerId: id, modeId: "openAPI", fieldId: "accessKey"),
+              let secretKey = ProviderCredentialStore.value(providerId: id, modeId: "openAPI", fieldId: "secretKey"),
+              !accessKey.isEmpty, !secretKey.isEmpty else {
+            return Snapshot(providerId: id, quotas: [], status: .error("请在右键菜单的“爬取模式 → 开放 API”中配置 AK/SK"))
+        }
+        return await VolcengineOpenAPI.fetchBalance(providerId: id, accessKey: accessKey, secretKey: secretKey)
+    }
 }
