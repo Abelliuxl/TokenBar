@@ -79,7 +79,8 @@ public final class OpenCodeGoAdapter: WebViewAdapter {
         super.init(id: "opencode-go", displayName: "opencode go",
                    iconSystemName: "bolt.fill",
                    loginURL: URL(string: "https://opencode.ai/workspace/wrk_01KVB7CEDBFN8VF6FYA2DJ1GR3/go")!,
-                   harvestScript: js)
+                   harvestScript: js,
+                   brandIcon: .openCode)
     }
 
     public override func parse(harvest: Any?) -> Snapshot {

@@ -62,7 +62,8 @@ public final class OpenRouterAdapter: WebViewAdapter {
                    displayName: "OpenRouter",
                    iconSystemName: "arrow.triangle.branch",
                    loginURL: URL(string: "https://openrouter.ai/settings/credits")!,
-                   harvestScript: js)
+                   harvestScript: js,
+                   brandIcon: .openRouter)
     }
 
     public override func parse(harvest: Any?) -> Snapshot {

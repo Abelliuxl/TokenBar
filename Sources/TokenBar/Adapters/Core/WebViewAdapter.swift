@@ -17,6 +17,7 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
     public let id: String
     public let displayName: String
     public let iconSystemName: String
+    public let brandIcon: BrandIcon?
     public let loginURL: URL
     public let harvestScript: String
 
@@ -30,9 +31,10 @@ public class WebViewAdapter: NSObject, ProviderAdapter, WKNavigationDelegate {
     private var timeout: DispatchWorkItem?
 
     public init(id: String, displayName: String, iconSystemName: String,
-                loginURL: URL, harvestScript: String) {
+                loginURL: URL, harvestScript: String, brandIcon: BrandIcon? = nil) {
         self.id = id; self.displayName = displayName; self.iconSystemName = iconSystemName
         self.loginURL = loginURL; self.harvestScript = harvestScript
+        self.brandIcon = brandIcon
     }
 
     public func fetch() async -> Snapshot {

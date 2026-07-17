@@ -124,7 +124,8 @@ public final class MinimaxAdapter: WebViewAdapter {
                    displayName: "MiniMax",
                    iconSystemName: "sparkles",
                    loginURL: URL(string: "https://platform.minimaxi.com/console/usage")!,
-                   harvestScript: js)
+                   harvestScript: js,
+                   brandIcon: .miniMax)
     }
 
     public override func parse(harvest: Any?) -> Snapshot {

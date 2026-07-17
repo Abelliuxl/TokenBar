@@ -9,6 +9,7 @@ public struct CodexAdapter: ProviderAdapter {
     public let id = "codex"
     public var displayName: String { "Codex" }
     public var iconSystemName: String { "terminal.fill" }
+    public var brandIcon: BrandIcon? { .codex }
     public var loginURL: URL { URL(string: "https://chatgpt.com/codex")! }
 
     public init() {}

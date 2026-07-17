@@ -53,10 +53,16 @@ public protocol ProviderAdapter: Sendable {
     var id: String { get }
     var displayName: String { get }
     var iconSystemName: String { get }
+    /// Real brand glyph for built-in providers; nil → UI falls back to `iconSystemName`.
+    var brandIcon: BrandIcon? { get }
     /// Entry page user must log into (for webView providers) or the API base (for http providers).
     var loginURL: URL { get }
     /// Performs one fetch; must NEVER throw — return `.error(...)` instead.
     func fetch() async -> Snapshot
+}
+
+public extension ProviderAdapter {
+    var brandIcon: BrandIcon? { nil }
 }
 
 public struct ProviderFetchMode: Identifiable, Sendable, Equatable {
