@@ -133,7 +133,7 @@ public struct ProviderSectionView: View {
     private var providerHeader: some View {
         HStack(spacing: 7) {
             if !compactBalance {
-                Image(systemName: provider.iconSystemName)
+                ProviderBrandIconView(provider: provider, size: 13)
             }
             Text(provider.displayName).bold()
                 .lineLimit(1)

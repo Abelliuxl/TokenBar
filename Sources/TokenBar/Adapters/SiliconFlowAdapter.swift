@@ -30,6 +30,7 @@ public struct SiliconFlowAdapter: ProviderAdapter {
     public let id = "siliconflow"
     public var displayName: String { "硅基流动" }
     public var iconSystemName: String { "cloud.fill" }
+    public var brandIcon: BrandIcon? { .siliconFlow }
     public var loginURL: URL { URL(string: "https://cloud.siliconflow.cn/me/expensebill")! }
 
     private let inner: HTTPAdapter

@@ -30,6 +30,7 @@ public struct VolcanoEngineAdapter: MultiModeProviderAdapter {
     public let id = "volcano"
     public var displayName: String { "火山引擎" }
     public var iconSystemName: String { "flame.fill" }
+    public var brandIcon: BrandIcon? { .volcano }
     public var loginURL: URL { URL(string: "https://console.volcengine.com/finance/account-overview/")! }
     public let defaultFetchModeId = "webSession"
     public let fetchModes = [

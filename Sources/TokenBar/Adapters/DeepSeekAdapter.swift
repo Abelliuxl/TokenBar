@@ -37,6 +37,7 @@ public struct DeepSeekAdapter: ProviderAdapter {
     public let id = "deepseek"
     public var displayName: String { "DeepSeek" }
     public var iconSystemName: String { "brain.head.profile" }
+    public var brandIcon: BrandIcon? { .deepSeek }
     public var loginURL: URL { URL(string: "https://platform.deepseek.com/usage")! }
 
     private let inner = HTTPAdapter(

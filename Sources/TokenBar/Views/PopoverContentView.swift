@@ -233,7 +233,7 @@ private struct ProviderDragPreview: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: provider.iconSystemName)
+            ProviderBrandIconView(provider: provider, size: 14)
             Text(provider.displayName)
                 .font(.headline)
         }
