@@ -29,7 +29,9 @@ final class BrandIconTests: XCTestCase {
         ]
         for (name, data) in paths {
             let rect = SVGPathParser.parse(data).boundingRect
-            XCTAssertTrue(rect.isFinite, name)
+            let isFinite = rect.origin.x.isFinite && rect.origin.y.isFinite
+                && rect.size.width.isFinite && rect.size.height.isFinite
+            XCTAssertTrue(isFinite, name)
             XCTAssertGreaterThan(rect.width, 0, name)
             XCTAssertGreaterThan(rect.height, 0, name)
         }
