@@ -2,6 +2,10 @@ import AppKit
 import SwiftUI
 import Combine
 
+extension Notification.Name {
+    static let tokenBarPopoverWillClose = Notification.Name("TokenBar.popoverWillClose")
+}
+
 @MainActor
 public final class StatusBarController {
     public let statusItem: NSStatusItem
@@ -42,7 +46,7 @@ public final class StatusBarController {
     @objc private func togglePopover(_ sender: AnyObject?) {
         guard let button = statusItem.button else { return }
         if popover.isShown {
-            popover.performClose(sender)
+            closePopover()
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
@@ -105,6 +109,12 @@ public final class StatusBarController {
     }
 
     private func closePopover() {
+        // A SwiftUI sheet presented from inside an NSPopover can outlive the
+        // popover when transient dismissal happens outside this controller.
+        // Notify the hosted views and ask the hosting controller to dismiss
+        // any presented controller before closing the popover itself.
+        NotificationCenter.default.post(name: .tokenBarPopoverWillClose, object: popover)
+        popover.contentViewController?.dismiss(nil)
         guard popover.isShown else { return }
         popover.performClose(nil)
     }

@@ -58,7 +58,9 @@ public struct ProviderSectionView: View {
                 }
             }
         }
-        .sheet(item: $credentialMode) { mode in
+        .sheet(item: $credentialMode, onDismiss: {
+            credentialMode = nil
+        }) { mode in
             ProviderCredentialsView(providerId: provider.id, mode: mode) {
                 ProviderFetchModeStore.setSelectedModeId(mode.id, providerId: provider.id)
                 selectedModeId = mode.id
@@ -67,6 +69,9 @@ public struct ProviderSectionView: View {
             } onCancel: {
                 credentialMode = nil
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .tokenBarPopoverWillClose)) { _ in
+            credentialMode = nil
         }
     }
 
