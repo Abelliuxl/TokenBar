@@ -90,8 +90,7 @@ public final class StatusBarController {
     private func handleLocalMouseDown(_ event: NSEvent) {
         guard popover.isShown else { return }
 
-        if let popoverWindow = popover.contentViewController?.viewIfLoaded?.window,
-           event.window === popoverWindow {
+        if isPopoverWindow(event.window) {
             return
         }
 
@@ -106,6 +105,43 @@ public final class StatusBarController {
         }
 
         closePopover()
+    }
+
+    private func isPopoverWindow(_ window: NSWindow?) -> Bool {
+        guard let window,
+              let popoverWindow = popover.contentViewController?.viewIfLoaded?.window else {
+            return false
+        }
+
+        if window === popoverWindow {
+            return true
+        }
+
+        // SwiftUI presents the credential form as a separate sheet window.
+        // Depending on the macOS version it may be exposed as a child/sheet
+        // window, so walk both relationships before using the shared popup
+        // level as a final fallback.
+        if popoverWindow.childWindows?.contains(where: { $0 === window }) == true {
+            return true
+        }
+
+        var parent = window.parent
+        while let current = parent {
+            if current === popoverWindow {
+                return true
+            }
+            parent = current.parent
+        }
+
+        var sheetParent = window.sheetParent
+        while let current = sheetParent {
+            if current === popoverWindow {
+                return true
+            }
+            sheetParent = current.sheetParent
+        }
+
+        return window.level == popoverWindow.level
     }
 
     private func closePopover() {

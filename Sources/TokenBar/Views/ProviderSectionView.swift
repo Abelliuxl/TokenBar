@@ -180,6 +180,7 @@ private struct ProviderCredentialsView: View {
     let onCancel: () -> Void
     @State private var values: [String: String] = [:]
     @State private var saveFailed = false
+    @FocusState private var focusedField: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -192,9 +193,11 @@ private struct ProviderCredentialsView: View {
                     if field.isSecret {
                         SecureField(field.placeholder, text: binding(for: field.id))
                             .textFieldStyle(.roundedBorder)
+                            .focused($focusedField, equals: field.id)
                     } else {
                         TextField(field.placeholder, text: binding(for: field.id))
                             .textFieldStyle(.roundedBorder)
+                            .focused($focusedField, equals: field.id)
                     }
                 }
             }
@@ -214,6 +217,11 @@ private struct ProviderCredentialsView: View {
         .onAppear {
             for field in mode.credentialFields {
                 values[field.id] = ProviderCredentialStore.value(providerId: providerId, modeId: mode.id, fieldId: field.id) ?? ""
+            }
+            // Make the first credential field the first responder so users
+            // can paste immediately with Cmd+V after opening the sheet.
+            DispatchQueue.main.async {
+                focusedField = mode.credentialFields.first?.id
             }
         }
     }
