@@ -5,6 +5,7 @@ public struct ProvidersRegistry {
 
     public static let `default` = ProvidersRegistry(adapters: [
         OpenCodeGoAdapter(),
+        CommandCodeAdapter(),
         MinimaxAdapter(),
         SiliconFlowAdapter(),
         DeepSeekAdapter(),

@@ -13,8 +13,8 @@ struct StubAdapter: ProviderAdapter {
 }
 
 final class ProvidersRegistryTests: XCTestCase {
-    func test_defaultRegistry_containsSevenProviders() {
-        XCTAssertEqual(ProvidersRegistry.default.adapters.count, 7)
+    func test_defaultRegistry_containsEightProviders() {
+        XCTAssertEqual(ProvidersRegistry.default.adapters.count, 8)
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "opencode-go" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "minimax" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "siliconflow" })
@@ -22,6 +22,7 @@ final class ProvidersRegistryTests: XCTestCase {
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "volcano" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "openrouter" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "codex" })
+        XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "command-code" })
     }
 }
 
@@ -129,6 +130,43 @@ final class OpenCodeGoAdapterTests: XCTestCase {
         XCTAssertEqual(snapshot.status, .ok)
         XCTAssertEqual(snapshot.quotas.map(\.id), ["rolling", "weekly", "monthly"])
         XCTAssertEqual(snapshot.quotas.map(\.used), [2, 42, 73])
+    }
+}
+
+final class CommandCodeAdapterTests: XCTestCase {
+    func test_parseUsesFiveHourWeeklyAndMonthlyPercentages() {
+        let harvest = """
+        {
+          "limits": {
+            "fiveHour": { "used": 12, "reset": "Resets in 4h 53m" },
+            "weekly": { "used": 34, "reset": "Resets in 6d 23h" },
+            "monthly": { "used": 56, "reset": "Resets on Sep 26" }
+          },
+          "href": "https://commandcode.ai/Abelliuxl/settings/usage"
+        }
+        """
+
+        let snapshot = CommandCodeAdapter().parse(harvest: harvest)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.map(\.id), ["fiveHour", "weekly", "monthly"])
+        XCTAssertEqual(snapshot.quotas.map(\.used), [12, 34, 56])
+        XCTAssertEqual(snapshot.quotas.map(\.resetText), ["Resets in 4h 53m", "Resets in 6d 23h", "Resets on Sep 26"])
+    }
+
+    func test_parseRecognizesUnauthenticatedPage() {
+        let harvest = """
+        {
+          "limits": {},
+          "href": "https://commandcode.ai/login?redirect=%2Fsettings%2Fusage",
+          "text": "Log in to Command Code"
+        }
+        """
+
+        let snapshot = CommandCodeAdapter().parse(harvest: harvest)
+
+        XCTAssertEqual(snapshot.status, .needsRelogin)
+        XCTAssertTrue(snapshot.quotas.isEmpty)
     }
 }
 
