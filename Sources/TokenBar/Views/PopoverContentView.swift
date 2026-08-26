@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 public struct PopoverContentView: View {
     @ObservedObject var appState: AppState
-    let onRefresh: () -> Void
+    let onRefresh: () async -> Void
     @State private var refreshing = false
     @State private var showingSettings = false
     @State private var draggedProviderId: String?
@@ -14,7 +14,7 @@ public struct PopoverContentView: View {
     @AppStorage("tb.balanceCardsPerRow") private var balanceCardsPerRow: Bool = true
     @AppStorage(CustomProviderStore.storageKey) private var customProvidersJSON: String = ""
 
-    public init(appState: AppState, onRefresh: @escaping () -> Void) {
+    public init(appState: AppState, onRefresh: @escaping () async -> Void) {
         self.appState = appState
         self.onRefresh = onRefresh
     }
@@ -40,13 +40,20 @@ public struct PopoverContentView: View {
             HStack {
                 Text("TokenBar").font(.headline)
                 Spacer()
-                Button(action: {
-                    refreshing = true
-                    onRefresh()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { refreshing = false }
-                }) {
+                Button(action: refreshAll) {
                     Image(systemName: refreshing ? "arrow.triangle.2.circlepath" : "arrow.clockwise")
-                }.buttonStyle(.borderless)
+                        .rotationEffect(.degrees(refreshing ? 360 : 0))
+                        .animation(
+                            refreshing
+                                ? .linear(duration: 0.8).repeatForever(autoreverses: false)
+                                : .default,
+                            value: refreshing
+                        )
+                }
+                .buttonStyle(.borderless)
+                .disabled(refreshing)
+                .help("刷新全部")
+                .accessibilityLabel("刷新全部")
                 Button(action: { showingSettings = true }) {
                     Image(systemName: "gearshape")
                 }.buttonStyle(.borderless)
@@ -126,7 +133,7 @@ public struct PopoverContentView: View {
             // authentication pages; it replaces fetch/XHR and can disrupt them.
             await mgr.startLogin(for: p)
         }
-        onRefresh()
+        await onRefresh()
     }
 
     private func beginProviderDrag(_ providerId: String) {
@@ -150,7 +157,7 @@ public struct PopoverContentView: View {
             provider: provider,
             snapshot: appState.snapshots[provider.id],
             onLogin: { Task { await loginFlow(for: provider) } },
-            onRefresh: { onRefresh() },
+            onRefresh: { await onRefresh() },
             onOpenWebPage: { openInBrowser(provider.loginURL) },
             compactBalance: compactBalance
         )
@@ -215,6 +222,17 @@ public struct PopoverContentView: View {
             return false
         }
         return snapshot.quotas.allSatisfy(\.isCurrency)
+    }
+
+    private func refreshAll() {
+        guard !refreshing else { return }
+        refreshing = true
+        Task { @MainActor in
+            await onRefresh()
+            // Keep the transition visible even when a cached/local read returns immediately.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            refreshing = false
+        }
     }
 }
 
@@ -325,7 +343,7 @@ private struct ProviderDragResetDropDelegate: DropDelegate {
 private struct SettingsPanelView: View {
     @ObservedObject var appState: AppState
     let onBack: () -> Void
-    let onRefresh: () -> Void
+    let onRefresh: () async -> Void
     @AppStorage("tb.launchAtLogin") private var launchAtLogin: Bool = false
     @AppStorage("tb.enabledProviderIds") private var enabledProviderIdsJSON: String = ""
     @AppStorage("tb.providerOrderIds") private var providerOrderIdsJSON: String = ""
@@ -476,7 +494,7 @@ private struct SettingsPanelView: View {
                 Spacer()
                 Button("全部开启") {
                     setEnabledProviderIds(Set(ProvidersRegistry.default.all().map(\.id)))
-                    onRefresh()
+                    triggerRefresh()
                 }
                 .buttonStyle(.borderless)
             }
@@ -503,7 +521,7 @@ private struct SettingsPanelView: View {
                 var enabled = enabledProviderIds
                 enabled.insert(definition.id)
                 setEnabledProviderIds(enabled)
-                onRefresh()
+                await onRefresh()
                 customProviderName = ""
                 customProviderURL = ""
                 showingAddCustomProvider = false
@@ -528,7 +546,7 @@ private struct SettingsPanelView: View {
             providerOrderIdsJSON = json
         }
         appState.clear(providerId: definition.id)
-        onRefresh()
+        triggerRefresh()
     }
 
     private func isHTTPURL(_ value: String) -> Bool {
@@ -553,9 +571,13 @@ private struct SettingsPanelView: View {
                     appState.clear(providerId: provider.id)
                 }
                 setEnabledProviderIds(next)
-                if enabled { onRefresh() }
+                if enabled { triggerRefresh() }
             }
         )
+    }
+
+    private func triggerRefresh() {
+        Task { await onRefresh() }
     }
 
     private var enabledProviderIds: Set<String> {

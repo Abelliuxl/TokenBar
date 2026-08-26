@@ -26,7 +26,7 @@ public final class StatusBarController {
         self.popover.contentViewController = NSHostingController(
             rootView: PopoverContentView(appState: appState,
                                          onRefresh: { [weak poller] in
-                                             Task { await poller?.tickOnce() }
+                                             await poller?.tickOnce()
                                          }))
 
         self.statusItem.button?.action = #selector(togglePopover(_:))

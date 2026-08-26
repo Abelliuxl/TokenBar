@@ -15,6 +15,12 @@ public struct CodexAdapter: ProviderAdapter {
     public init() {}
 
     public func fetch() async -> Snapshot {
+        await CodexReadCache.shared.snapshot {
+            self.readSnapshot()
+        }
+    }
+
+    private func readSnapshot() -> Snapshot {
         let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sessions", isDirectory: true)
 
@@ -130,6 +136,37 @@ public struct CodexAdapter: ProviderAdapter {
         formatter.dateFormat = "MM-dd HH:mm"
         return formatter
     }()
+}
+
+/// Serializes local Codex reads and avoids rescanning the session tree for
+/// repeated clicks. The cache is intentionally short-lived: a manual refresh
+/// always becomes eligible again after five seconds.
+actor CodexReadCache {
+    static let shared = CodexReadCache()
+
+    private let cooldown: TimeInterval
+    private let clock: @Sendable () -> Date
+    private var lastReadAt: Date?
+    private var cachedSnapshot: Snapshot?
+
+    init(cooldown: TimeInterval = 5, clock: @escaping @Sendable () -> Date = { Date() }) {
+        self.cooldown = cooldown
+        self.clock = clock
+    }
+
+    func snapshot(_ read: @Sendable () -> Snapshot) -> Snapshot {
+        let now = clock()
+        if let lastReadAt,
+           let cachedSnapshot,
+           now.timeIntervalSince(lastReadAt) < cooldown {
+            return cachedSnapshot
+        }
+
+        let snapshot = read()
+        lastReadAt = now
+        cachedSnapshot = snapshot
+        return snapshot
+    }
 }
 
 private struct TokenCountEvent {
