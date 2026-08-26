@@ -6,20 +6,7 @@ import WebKit
 /// The page exposes each quota as an accessible `progressbar`, including a
 /// language-neutral `aria-valuenow` percentage and a human-readable reset
 /// message. The default path reads from the authenticated WebView session.
-/// The API path is opt-in and reads a locally stored Command Code API key.
-public final class CommandCodeAdapter: WebViewAdapter, MultiModeProviderAdapter {
-    public let defaultFetchModeId = "webSession"
-    public let fetchModes = [
-        ProviderFetchMode(id: "webSession", title: "网页登录"),
-        ProviderFetchMode(
-            id: "api",
-            title: "余额 API",
-            credentialFields: [
-                ProviderCredentialField(id: "apiKey", title: "Command Code API Key", placeholder: "user_...", isSecret: true),
-            ]
-        ),
-    ]
-
+public final class CommandCodeAdapter: WebViewAdapter {
     public init() {
         let js = """
         (function() {
@@ -88,17 +75,6 @@ public final class CommandCodeAdapter: WebViewAdapter, MultiModeProviderAdapter 
 
     public override var maximumHarvestAttempts: Int { 3 }
     public override var harvestRetryDelay: TimeInterval { 1 }
-
-    public override func fetch() async -> Snapshot {
-        guard ProviderFetchModeStore.selectedModeId(for: self) == "api" else {
-            return await super.fetch()
-        }
-        guard let apiKey = ProviderCredentialStore.value(providerId: id, modeId: "api", fieldId: "apiKey"),
-              !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return Snapshot(providerId: id, quotas: [], status: .error("请在右键菜单的“爬取模式 → 余额 API”中配置 Command Code API Key"))
-        }
-        return await CommandCodeAPI.fetchBalance(apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
 
     public override func shouldRetry(harvest: Any?) -> Bool {
         guard let json = harvest as? String,
