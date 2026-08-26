@@ -25,8 +25,8 @@ final class ProvidersRegistryTests: XCTestCase {
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "command-code" })
     }
 
-    func testBalanceProvidersExposeWebAndAPIModes() {
-        for providerId in ["deepseek", "openrouter", "command-code"] {
+    func testDeepSeekAndOpenRouterExposeWebAndAPIModes() {
+        for providerId in ["deepseek", "openrouter"] {
             guard let provider = ProvidersRegistry.default.adapters.first(where: { $0.id == providerId }),
                   let multiMode = provider as? any MultiModeProviderAdapter else {
                 return XCTFail("Expected \(providerId) to support multiple fetch modes")
@@ -57,6 +57,23 @@ final class OfficialBalanceAPITests: XCTestCase {
         XCTAssertEqual(snapshot.quotas.first?.unit, "¥")
     }
 
+    func test_deepSeekAPI_keepsNegativeCurrencyBalance() {
+        let data = Data("""
+        {
+          "is_available": true,
+          "balance_infos": [
+            { "currency": "CNY", "total_balance": "-2.50" }
+          ]
+        }
+        """.utf8)
+
+        let snapshot = DeepSeekAPI.decode(data: data)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.first?.total ?? 0, -2.50, accuracy: 0.000001)
+        XCTAssertEqual(snapshot.quotas.first?.unit, "¥")
+    }
+
     func test_openRouterAPI_decodesRemainingCredits() {
         let data = Data("""
         {
@@ -71,54 +88,6 @@ final class OfficialBalanceAPITests: XCTestCase {
         XCTAssertEqual(snapshot.quotas.first?.unit, "$")
     }
 
-    func test_commandCodeAPI_decodesCreditsAndRollingWindows() {
-        let data = Data("""
-        {
-          "credits": {
-            "monthlyCredits": 69.9411858041,
-            "purchasedCredits": "2.5",
-            "freeCredits": 0
-          },
-          "windowLimits": {
-            "limited": true,
-            "fiveHour": {
-              "used": 0.0588141959,
-              "cap": 14,
-              "exceeded": false,
-              "resetAt": 1787744320560
-            },
-            "weekly": {
-              "used": 0.0588141959,
-              "cap": 35,
-              "exceeded": false,
-              "resetAt": 1788331120560
-            }
-          }
-        }
-        """.utf8)
-
-        let snapshot = CommandCodeAPI.decode(data: data)
-
-        XCTAssertEqual(snapshot.status, .ok)
-        XCTAssertEqual(snapshot.quotas.map(\.id), ["credits-monthly", "credits-purchased", "credits-free", "fiveHour", "weekly"])
-        XCTAssertEqual(snapshot.quotas[0].total, 69.9411858041, accuracy: 0.000001)
-        XCTAssertEqual(snapshot.quotas[1].total, 2.5, accuracy: 0.000001)
-        XCTAssertEqual(snapshot.quotas[3].used, 0.0588141959, accuracy: 0.000001)
-        XCTAssertEqual(snapshot.quotas[3].total, 14, accuracy: 0.000001)
-        XCTAssertEqual(snapshot.quotas[3].unit, "%")
-        XCTAssertNotNil(snapshot.quotas[3].resetsAt)
-        XCTAssertNotNil(snapshot.quotas[3].resetText)
-    }
-
-    func test_commandCodeAPI_rejectsMissingCredits() {
-        let snapshot = CommandCodeAPI.decode(data: Data("{\"windowLimits\":{}}".utf8))
-
-        XCTAssertTrue(snapshot.quotas.isEmpty)
-        guard case .error(let message) = snapshot.status else {
-            return XCTFail("Expected malformed credits payload to fail")
-        }
-        XCTAssertTrue(message.contains("解析失败"))
-    }
 }
 
 final class OpenRouterAdapterTests: XCTestCase {

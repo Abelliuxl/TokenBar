@@ -39,8 +39,7 @@ public enum DeepSeekAPI {
         let quotas = rawInfos.compactMap { raw -> Quota? in
             guard let currency = raw["currency"] as? String,
                   let total = number(raw["total_balance"]),
-                  total.isFinite,
-                  total >= 0 else {
+                  total.isFinite else {
                 return nil
             }
             let normalizedCurrency = currency.uppercased()
