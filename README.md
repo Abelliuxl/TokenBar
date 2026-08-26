@@ -33,7 +33,7 @@ open build/TokenBar.app
 | `deepseek` | DeepSeek | 网页登录 / 官方 API | 余额 ¥ / $ |
 | `volcano` | 火山引擎 | HTTP (cookie auth) | 余额 ¥ |
 | `openrouter` | OpenRouter | 网页登录 / 官方 API | Credits $ |
-| `command-code` | command code | WKWebView + JS | 5h / 周 / 月 |
+| `command-code` | command code | 网页登录 / 余额 API | 月度余额 $ / 5h / 周 |
 
 ## Adding a new Provider
 
@@ -89,6 +89,15 @@ open build/TokenBar.app
 - **开放 API**：使用火山引擎费用中心 `QueryBalanceAcct` OpenAPI，不依赖网页登录态。
 
 首次选择“开放 API”会要求填写 Access Key ID 和 Secret Access Key。凭据仅保存在本机 TokenBar 配置中（当前为 UserDefaults 本地明文存储）；再次点击已选中的“开放 API”可以修改凭据。建议为 TokenBar 创建仅有费用中心只读权限的 IAM 子账号密钥。
+
+## Command Code 获取模式
+
+右键 Command Code 卡片，打开“爬取模式”二级菜单，可以选择：
+
+- **网页登录**：使用 WKWebView 的 Command Code 登录态读取网页上的 5 小时、周和月度用量百分比。
+- **余额 API**：使用 Command Code API Key 请求 `https://api.commandcode.ai/alpha/billing/credits`，读取月度、购买和免费额度，以及 5 小时/周窗口。
+
+Command Code 的余额接口目前属于官方 CLI 使用的未公开 `/alpha` 接口，不是公开 Provider API 的稳定版本化接口。首次选择“余额 API”会要求填写 API Key；凭据仅保存在本机 TokenBar 配置中。
 
 ## Privacy
 
