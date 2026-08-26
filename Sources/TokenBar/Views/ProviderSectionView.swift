@@ -179,7 +179,7 @@ private struct ProviderCredentialsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("配置\(mode.title)").font(.headline)
-            Text("凭据只保存在这台 Mac 的钥匙串中。")
+            Text("凭据只保存在这台 Mac 的 TokenBar 配置中。")
                 .font(.caption).foregroundStyle(.secondary)
             ForEach(mode.credentialFields) { field in
                 VStack(alignment: .leading, spacing: 5) {
@@ -194,7 +194,7 @@ private struct ProviderCredentialsView: View {
                 }
             }
             if saveFailed {
-                Text("写入 macOS 钥匙串失败。").font(.caption).foregroundStyle(.red)
+                Text("保存凭据失败。").font(.caption).foregroundStyle(.red)
             }
             HStack {
                 Button("取消", action: onCancel)

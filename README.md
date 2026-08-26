@@ -30,9 +30,9 @@ open build/TokenBar.app
 | `opencode-go` | opencode go | WKWebView + JS | 5h / 周 / 月 |
 | `minimax` | MiniMax | WKWebView + JS | 订阅 |
 | `siliconflow` | 硅基流动 | HTTP (cookie auth) | 余额 ¥ |
-| `deepseek` | DeepSeek | HTTP (cookie auth) | 余额 ¥ |
+| `deepseek` | DeepSeek | 网页登录 / 官方 API | 余额 ¥ / $ |
 | `volcano` | 火山引擎 | HTTP (cookie auth) | 余额 ¥ |
-| `openrouter` | OpenRouter | WKWebView + JS | Credits $ |
+| `openrouter` | OpenRouter | 网页登录 / 官方 API | Credits $ |
 | `command-code` | command code | WKWebView + JS | 5h / 周 / 月 |
 
 ## Adding a new Provider
@@ -88,11 +88,11 @@ open build/TokenBar.app
 - **网页登录**：使用 WKWebView 的控制台登录态和控制台余额接口。
 - **开放 API**：使用火山引擎费用中心 `QueryBalanceAcct` OpenAPI，不依赖网页登录态。
 
-首次选择“开放 API”会要求填写 Access Key ID 和 Secret Access Key。凭据仅保存在本机 macOS 钥匙串；再次点击已选中的“开放 API”可以修改凭据。建议为 TokenBar 创建仅有费用中心只读权限的 IAM 子账号密钥。
+首次选择“开放 API”会要求填写 Access Key ID 和 Secret Access Key。凭据仅保存在本机 TokenBar 配置中（当前为 UserDefaults 本地明文存储）；再次点击已选中的“开放 API”可以修改凭据。建议为 TokenBar 创建仅有费用中心只读权限的 IAM 子账号密钥。
 
 ## Privacy
 
-- 登录态由 **WKWebView persistent website data store** 保存；开放 API 凭据保存在 macOS Keychain
+- 登录态由 **WKWebView persistent website data store** 保存；开放 API 凭据保存在本机 TokenBar 配置中
 - 没有任何 telemetry、上报、远端统计
 - 出站网络流量**仅**到各 Provider 自己的域名（WKWebView 登录页 / API endpoint）
 - `secret_scan.sh` 在 build 前扫描源码，确保没有真实 secret 泄漏到 git

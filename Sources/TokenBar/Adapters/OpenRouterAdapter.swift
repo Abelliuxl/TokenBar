@@ -6,10 +6,22 @@ import WebKit
 /// Official API endpoint:
 /// `GET https://openrouter.ai/api/v1/credits`
 ///
-/// The public API documents this as Bearer-token authenticated. In TokenBar we
-/// avoid storing API keys, so this adapter runs inside the logged-in WebKit
-/// session and falls back to the visible credits page text.
-public final class OpenRouterAdapter: WebViewAdapter {
+/// The web-session mode runs inside the logged-in WebKit session and falls back
+/// to the visible credits page text. The optional official API mode uses a
+/// user-provided Bearer API key.
+public final class OpenRouterAdapter: WebViewAdapter, MultiModeProviderAdapter {
+    public let defaultFetchModeId = "webSession"
+    public let fetchModes = [
+        ProviderFetchMode(id: "webSession", title: "网页登录"),
+        ProviderFetchMode(
+            id: "api",
+            title: "官方 API",
+            credentialFields: [
+                ProviderCredentialField(id: "apiKey", title: "OpenRouter API Key", placeholder: "sk-or-v1-...", isSecret: true),
+            ]
+        ),
+    ]
+
     public init() {
         let js = """
         (function() {
@@ -64,6 +76,17 @@ public final class OpenRouterAdapter: WebViewAdapter {
                    loginURL: URL(string: "https://openrouter.ai/settings/credits")!,
                    harvestScript: js,
                    brandIcon: .openRouter)
+    }
+
+    public override func fetch() async -> Snapshot {
+        guard ProviderFetchModeStore.selectedModeId(for: self) == "api" else {
+            return await super.fetch()
+        }
+        guard let apiKey = ProviderCredentialStore.value(providerId: id, modeId: "api", fieldId: "apiKey"),
+              !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return Snapshot(providerId: id, quotas: [], status: .error("请在右键菜单的“爬取模式 → 官方 API”中配置 OpenRouter API Key"))
+        }
+        return await OpenRouterAPI.fetchBalance(apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     public override func parse(harvest: Any?) -> Snapshot {

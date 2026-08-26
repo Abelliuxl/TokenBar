@@ -40,7 +40,7 @@ public struct VolcanoEngineAdapter: MultiModeProviderAdapter {
             title: "开放 API",
             credentialFields: [
                 ProviderCredentialField(id: "accessKey", title: "Access Key ID", placeholder: "AK..."),
-                ProviderCredentialField(id: "secretKey", title: "Secret Access Key", placeholder: "仅保存在本机钥匙串", isSecret: true),
+                ProviderCredentialField(id: "secretKey", title: "Secret Access Key", placeholder: "仅保存在本机 TokenBar 配置", isSecret: true),
             ]
         ),
     ]

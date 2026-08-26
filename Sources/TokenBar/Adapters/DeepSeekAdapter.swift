@@ -2,6 +2,10 @@ import Foundation
 
 /// Adapter for DeepSeek.
 ///
+/// The default web-session mode reads the authenticated platform page. The
+/// optional official API mode uses `GET https://api.deepseek.com/user/balance`
+/// with a user-provided Bearer API key.
+///
 /// ## Endpoint (verified 2026-07-05)
 /// ```
 /// GET https://platform.deepseek.com/auth-api/v0/users/current
@@ -33,12 +37,23 @@ import Foundation
 /// Token estimation is also available via `token_estimation`.
 ///
 /// See `docs/research/deepseek-research.md` for details.
-public struct DeepSeekAdapter: ProviderAdapter {
+public struct DeepSeekAdapter: MultiModeProviderAdapter {
     public let id = "deepseek"
     public var displayName: String { "DeepSeek" }
     public var iconSystemName: String { "brain.head.profile" }
     public var brandIcon: BrandIcon? { .deepSeek }
     public var loginURL: URL { URL(string: "https://platform.deepseek.com/usage")! }
+    public let defaultFetchModeId = "webSession"
+    public let fetchModes = [
+        ProviderFetchMode(id: "webSession", title: "网页登录"),
+        ProviderFetchMode(
+            id: "api",
+            title: "官方 API",
+            credentialFields: [
+                ProviderCredentialField(id: "apiKey", title: "DeepSeek API Key", placeholder: "sk-...", isSecret: true),
+            ]
+        ),
+    ]
 
     private let inner = HTTPAdapter(
         id: "deepseek",
@@ -74,5 +89,14 @@ public struct DeepSeekAdapter: ProviderAdapter {
         }
     )
 
-    public func fetch() async -> Snapshot { await inner.fetch() }
+    public func fetch() async -> Snapshot {
+        guard ProviderFetchModeStore.selectedModeId(for: self) == "api" else {
+            return await inner.fetch()
+        }
+        guard let apiKey = ProviderCredentialStore.value(providerId: id, modeId: "api", fieldId: "apiKey"),
+              !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return Snapshot(providerId: id, quotas: [], status: .error("请在右键菜单的“爬取模式 → 官方 API”中配置 DeepSeek API Key"))
+        }
+        return await DeepSeekAPI.fetchBalance(apiKey: apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
 }

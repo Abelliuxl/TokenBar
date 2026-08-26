@@ -24,6 +24,52 @@ final class ProvidersRegistryTests: XCTestCase {
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "codex" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "command-code" })
     }
+
+    func test_deepSeekAndOpenRouterExposeWebAndAPIModes() {
+        for providerId in ["deepseek", "openrouter"] {
+            guard let provider = ProvidersRegistry.default.adapters.first(where: { $0.id == providerId }),
+                  let multiMode = provider as? any MultiModeProviderAdapter else {
+                return XCTFail("Expected \(providerId) to support multiple fetch modes")
+            }
+            XCTAssertEqual(multiMode.defaultFetchModeId, "webSession")
+            XCTAssertEqual(multiMode.fetchModes.map(\.id), ["webSession", "api"])
+            XCTAssertEqual(multiMode.fetchModes.last?.credentialFields.map(\.id), ["apiKey"])
+        }
+    }
+}
+
+final class OfficialBalanceAPITests: XCTestCase {
+    func test_deepSeekAPI_decodesCurrencyBalance() {
+        let data = Data("""
+        {
+          "is_available": true,
+          "balance_infos": [
+            { "currency": "CNY", "total_balance": "21.84", "granted_balance": "1.84", "topped_up_balance": "20.00" }
+          ]
+        }
+        """.utf8)
+
+        let snapshot = DeepSeekAPI.decode(data: data)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.map(\.id), ["balance-cny"])
+        XCTAssertEqual(snapshot.quotas.first?.total ?? -1, 21.84, accuracy: 0.000001)
+        XCTAssertEqual(snapshot.quotas.first?.unit, "¥")
+    }
+
+    func test_openRouterAPI_decodesRemainingCredits() {
+        let data = Data("""
+        {
+          "data": { "total_credits": 170, "total_usage": 158.505987168 }
+        }
+        """.utf8)
+
+        let snapshot = OpenRouterAPI.decode(data: data)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.first?.total ?? -1, 11.494012832, accuracy: 0.000001)
+        XCTAssertEqual(snapshot.quotas.first?.unit, "$")
+    }
 }
 
 final class OpenRouterAdapterTests: XCTestCase {
