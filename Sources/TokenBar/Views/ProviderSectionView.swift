@@ -4,16 +4,17 @@ public struct ProviderSectionView: View {
     let provider: any ProviderAdapter
     let snapshot: Snapshot?
     let onLogin: () -> Void
-    let onRefresh: () -> Void
+    let onRefresh: () async -> Void
     let onOpenWebPage: () -> Void
     let compactBalance: Bool
     @State private var credentialMode: ProviderFetchMode?
     @State private var selectedModeId: String
+    @State private var refreshing = false
 
     public init(provider: any ProviderAdapter,
                 snapshot: Snapshot?,
                 onLogin: @escaping () -> Void,
-                onRefresh: @escaping () -> Void,
+                onRefresh: @escaping () async -> Void,
                 onOpenWebPage: @escaping () -> Void,
                 compactBalance: Bool = false) {
         self.provider = provider
@@ -62,7 +63,7 @@ public struct ProviderSectionView: View {
                 ProviderFetchModeStore.setSelectedModeId(mode.id, providerId: provider.id)
                 selectedModeId = mode.id
                 credentialMode = nil
-                onRefresh()
+                Task { await onRefresh() }
             } onCancel: {
                 credentialMode = nil
             }
@@ -78,7 +79,7 @@ public struct ProviderSectionView: View {
         if mode.credentialFields.isEmpty || ProviderCredentialStore.hasCredentials(providerId: provider.id, mode: mode) {
             ProviderFetchModeStore.setSelectedModeId(mode.id, providerId: provider.id)
             selectedModeId = mode.id
-            onRefresh()
+            Task { await onRefresh() }
         } else {
             credentialMode = mode
         }
@@ -138,10 +139,31 @@ public struct ProviderSectionView: View {
             Text(provider.displayName).bold()
                 .lineLimit(1)
             Spacer(minLength: 4)
-            Button(action: onRefresh) {
+            Button(action: refresh) {
                 Image(systemName: "arrow.clockwise")
+                    .rotationEffect(.degrees(refreshing ? 360 : 0))
+                    .animation(
+                        refreshing
+                            ? .linear(duration: 0.8).repeatForever(autoreverses: false)
+                            : .default,
+                        value: refreshing
+                    )
             }
             .buttonStyle(.borderless)
+            .disabled(refreshing)
+            .help("刷新 " + provider.displayName)
+            .accessibilityLabel("刷新 " + provider.displayName)
+        }
+    }
+
+    private func refresh() {
+        guard !refreshing else { return }
+        refreshing = true
+        Task { @MainActor in
+            await onRefresh()
+            // Keep the transition visible even when a cached/local read returns immediately.
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            refreshing = false
         }
     }
 }

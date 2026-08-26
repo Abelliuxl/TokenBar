@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import TokenBar
 
 struct StubAdapter: ProviderAdapter {
@@ -140,5 +141,49 @@ final class AppStateTests: XCTestCase {
         let snap2 = Snapshot(providerId: "x", quotas: [], status: .needsRelogin)
         state.update(snapshot: snap2)
         XCTAssertEqual(state.snapshots["x"]?.status, .needsRelogin)
+    }
+}
+
+private final class CodexTestClock: @unchecked Sendable {
+    var date = Date(timeIntervalSince1970: 1_000)
+
+    func now() -> Date { date }
+    func advance(by interval: TimeInterval) { date.addTimeInterval(interval) }
+}
+
+private final class CodexReadCounter: @unchecked Sendable {
+    private(set) var value = 0
+
+    func increment() {
+        value += 1
+    }
+}
+
+final class CodexReadCacheTests: XCTestCase {
+    func test_reusesSnapshotWithinFiveSeconds_thenReadsAgain() async {
+        let clock = CodexTestClock()
+        let counter = CodexReadCounter()
+        let cache = CodexReadCache(cooldown: 5, clock: { clock.now() })
+
+        let first = await cache.snapshot {
+            counter.increment()
+            return Snapshot(providerId: "codex", quotas: [], status: .ok)
+        }
+
+        clock.advance(by: 4.9)
+        let cached = await cache.snapshot {
+            counter.increment()
+            return Snapshot(providerId: "codex", quotas: [], status: .error("should not read yet"))
+        }
+
+        clock.advance(by: 0.2)
+        let refreshed = await cache.snapshot {
+            counter.increment()
+            return Snapshot(providerId: "codex", quotas: [], status: .ok)
+        }
+
+        XCTAssertEqual(counter.value, 2)
+        XCTAssertEqual(cached, first)
+        XCTAssertEqual(refreshed.status, .ok)
     }
 }

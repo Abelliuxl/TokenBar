@@ -5,7 +5,7 @@ public actor Poller {
     private var task: Task<Void, Never>?
     private let interval: TimeInterval
     private var isTicking = false
-    private var refreshPending = false
+    private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(appState: AppState, interval: TimeInterval = 300) {
         self.appState = appState
@@ -34,17 +34,19 @@ public actor Poller {
     public func tickOnce() async {
         guard !isTicking else {
             AppLog.poller.notice("Tick skipped: previous tick still running")
-            refreshPending = true
-            DiagnosticLog.record("poller", "refresh queued; previous tick still running")
+            DiagnosticLog.record("poller", "refresh coalesced; waiting for current tick")
+            await withCheckedContinuation { continuation in
+                refreshWaiters.append(continuation)
+            }
             return
         }
         isTicking = true
         defer {
             isTicking = false
-            if refreshPending {
-                refreshPending = false
-                DiagnosticLog.record("poller", "running queued refresh")
-                Task { await self.tickOnce() }
+            let waiters = refreshWaiters
+            refreshWaiters.removeAll(keepingCapacity: true)
+            for waiter in waiters {
+                waiter.resume()
             }
         }
 
