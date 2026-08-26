@@ -26,6 +26,7 @@ final class BrandIconTests: XCTestCase {
             "volcano": BrandGlyphPaths.volcanoCyan + BrandGlyphPaths.volcanoBlue,
             "codex": BrandGlyphPaths.codex,
             "commandCode": BrandGlyphPaths.commandCode,
+            "bailian": BrandGlyphPaths.bailianSpine + BrandGlyphPaths.bailianLoops,
         ]
         for (name, data) in paths {
             let rect = SVGPathParser.parse(data).boundingRect

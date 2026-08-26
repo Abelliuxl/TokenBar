@@ -412,7 +412,10 @@ private struct SettingsPanelView: View {
                 Section("Provider") {
                     ForEach(ProvidersRegistry.default.ordered(), id: \.id) { provider in
                         Toggle(isOn: providerBinding(provider)) {
-                            Label(provider.displayName, systemImage: provider.iconSystemName)
+                            HStack(spacing: 6) {
+                                ProviderBrandIconView(provider: provider, size: 14)
+                                Text(provider.displayName)
+                            }
                         }
                         .toggleStyle(.switch)
                     }

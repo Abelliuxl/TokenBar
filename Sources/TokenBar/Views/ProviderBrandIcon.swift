@@ -13,6 +13,7 @@ public enum BrandIcon: Sendable {
     case openCode
     case codex
     case commandCode
+    case bailian
 }
 
 extension NSColor {
@@ -102,6 +103,16 @@ public struct ProviderBrandIconView: View {
                 SVGBrandShape(pathData: BrandGlyphPaths.commandCodeGlyph,
                               viewBox: BrandGlyphPaths.commandCodeBox)
                     .fill(Color.primary)
+            }
+            .frame(width: size, height: size)
+        case .bailian:
+            ZStack {
+                SVGBrandShape(pathData: BrandGlyphPaths.bailianSpine,
+                              viewBox: BrandGlyphPaths.bailianBox)
+                    .fill(Color(hex: 0xFF6A00))
+                SVGBrandShape(pathData: BrandGlyphPaths.bailianLoops,
+                              viewBox: BrandGlyphPaths.bailianBox)
+                    .fill(Color(hex: 0x1677FF))
             }
             .frame(width: size, height: size)
         }

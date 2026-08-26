@@ -18,8 +18,8 @@ open build/TokenBar.app
 
 首次使用：
 1. 点击菜单栏的 TokenBar 图标 → 下拉面板展开
-2. 每个 Provider 在未登录状态显示"登录"按钮
-3. 点登录 → 弹出 WKWebView 登录窗口
+2. 支持网页登录的 Provider 在未登录状态显示"登录"按钮；API-only Provider 显示凭证配置入口
+3. 支持网页登录的 Provider 点登录 → 弹出 WKWebView 登录窗口；API-only Provider 直接配置凭证
 4. 关闭登录窗口 → App 自动 polling（默认每 300 秒）
 5. 菜单栏图标颜色反映最紧急的 quota 状态（绿/黄/红）
 
@@ -32,6 +32,7 @@ open build/TokenBar.app
 | `siliconflow` | 硅基流动 | HTTP (cookie auth) | 余额 ¥ |
 | `deepseek` | DeepSeek | 网页登录 / 官方 API | 余额 ¥ / $ |
 | `volcano` | 火山引擎 | HTTP (cookie auth) | 余额 ¥ |
+| `bailian` | 阿里百炼 | 纯 HTTP + AccessKey 凭证 | 账户余额 ¥ |
 | `openrouter` | OpenRouter | 网页登录 / 官方 API | Credits $ |
 | `command-code` | command code | WKWebView + JS | 5h / 周 / 月 |
 
@@ -89,6 +90,12 @@ open build/TokenBar.app
 - **开放 API**：使用火山引擎费用中心 `QueryBalanceAcct` OpenAPI，不依赖网页登录态。
 
 首次选择“开放 API”会要求填写 Access Key ID 和 Secret Access Key。凭据仅保存在本机 TokenBar 配置中（当前为 UserDefaults 本地明文存储）；再次点击已选中的“开放 API”可以修改凭据。建议为 TokenBar 创建仅有费用中心只读权限的 IAM 子账号密钥。
+
+## 阿里百炼获取方式
+
+阿里百炼只提供 **AccessKey 凭证** 方式，不提供网页登录入口。右键阿里百炼卡片，打开“爬取模式 → AccessKey 凭证”，手动填写阿里云 RAM 用户的 AccessKey ID 和 AccessKey Secret。
+
+TokenBar 在进程内实现阿里云 BSS RPC 签名，调用 `QueryAccountBalance` 获取账户余额；不引入阿里云 SDK、第三方网络库或 OAuth 依赖。建议为 TokenBar 单独创建仅有 `AliyunBSSReadOnlyAccess` 权限的 RAM 用户。
 
 ## Privacy
 

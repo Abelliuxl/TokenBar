@@ -13,13 +13,14 @@ struct StubAdapter: ProviderAdapter {
 }
 
 final class ProvidersRegistryTests: XCTestCase {
-    func test_defaultRegistry_containsEightProviders() {
-        XCTAssertEqual(ProvidersRegistry.default.adapters.count, 8)
+    func test_defaultRegistry_containsNineProviders() {
+        XCTAssertEqual(ProvidersRegistry.default.adapters.count, 9)
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "opencode-go" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "minimax" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "siliconflow" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "deepseek" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "volcano" })
+        XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "bailian" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "openrouter" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "codex" })
         XCTAssertTrue(ProvidersRegistry.default.adapters.contains { $0.id == "command-code" })
@@ -86,6 +87,31 @@ final class OfficialBalanceAPITests: XCTestCase {
         XCTAssertEqual(snapshot.status, .ok)
         XCTAssertEqual(snapshot.quotas.first?.total ?? -1, 11.494012832, accuracy: 0.000001)
         XCTAssertEqual(snapshot.quotas.first?.unit, "$")
+    }
+
+    func test_bailianAPI_decodesAccountBalance() {
+        let data = Data("""
+        {
+          "Code": "200",
+          "Message": "success",
+          "Success": true,
+          "Data": {
+            "AvailableCashAmount": "27.07",
+            "AvailableAmount": "27.07",
+            "CreditAmount": "0.00",
+            "Currency": "CNY",
+            "QuotaLimit": "0.00"
+          }
+        }
+        """.utf8)
+
+        let snapshot = AlibabaCloudBSSOpenAPI.decode(data: data)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.map(\.id), ["balance-cny"])
+        XCTAssertEqual(snapshot.quotas.first?.label, "账户余额")
+        XCTAssertEqual(snapshot.quotas.first?.total ?? -1, 27.07, accuracy: 0.000001)
+        XCTAssertEqual(snapshot.quotas.first?.unit, "¥")
     }
 
 }

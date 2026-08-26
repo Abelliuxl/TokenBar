@@ -39,8 +39,10 @@ public struct ProviderSectionView: View {
             }
         }
         .contextMenu {
-            Button("打开网页", systemImage: "safari") {
-                onOpenWebPage()
+            if provider.supportsWebLogin {
+                Button("打开网页", systemImage: "safari") {
+                    onOpenWebPage()
+                }
             }
             if let multiMode = provider as? any MultiModeProviderAdapter {
                 Menu("爬取模式", systemImage: "arrow.triangle.branch") {
@@ -96,28 +98,46 @@ public struct ProviderSectionView: View {
             if let snap = snapshot {
                 switch snap.status {
                 case .needsRelogin:
-                    Label("需要登录或登录态无效", systemImage: "exclamationmark.triangle.fill")
+                    Label(provider.supportsWebLogin ? "需要登录或登录态无效" : "凭证无效或已失效", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .font(.caption)
-                    Button("重新登录", action: onLogin)
-                        .buttonStyle(.bordered)
+                    if provider.supportsWebLogin {
+                        Button("重新登录", action: onLogin)
+                            .buttonStyle(.bordered)
+                    } else {
+                        credentialAction
+                    }
                 case .error(let msg):
                     Text(msg).font(.caption).foregroundStyle(.red)
                         .lineLimit(4)
-                    Button("打开页面", action: onLogin)
-                        .buttonStyle(.bordered)
+                    if provider.supportsWebLogin {
+                        Button("打开页面", action: onLogin)
+                            .buttonStyle(.bordered)
+                    } else {
+                        credentialAction
+                    }
                 case .ok:
                     ForEach(snap.quotas) { q in QuotaRowView(quota: q) }
                     if snap.quotas.isEmpty {
                         Text("没有抓到用量数据").font(.caption).foregroundStyle(.secondary)
-                        Button("打开页面", action: onLogin)
-                            .buttonStyle(.bordered)
+                        if provider.supportsWebLogin {
+                            Button("打开页面", action: onLogin)
+                                .buttonStyle(.bordered)
+                        } else {
+                            credentialAction
+                        }
                     }
                 }
             } else {
-                Text("未登录或等待刷新").font(.caption).foregroundStyle(.secondary)
-                Button("登录", action: onLogin)
-                    .buttonStyle(.bordered)
+                Text(provider.supportsWebLogin ? "未登录或等待刷新" : "尚未配置凭证")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if provider.supportsWebLogin {
+                    Button("登录", action: onLogin)
+                        .buttonStyle(.bordered)
+                } else {
+                    credentialAction
+                }
             }
             Divider()
         }
@@ -134,6 +154,23 @@ public struct ProviderSectionView: View {
         }
         .padding(10)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var credentialAction: some View {
+        if let mode = selectedCredentialMode {
+            Button(ProviderCredentialStore.hasCredentials(providerId: provider.id, mode: mode) ? "编辑凭证" : "配置凭证") {
+                credentialMode = mode
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var selectedCredentialMode: ProviderFetchMode? {
+        guard let multiMode = provider as? any MultiModeProviderAdapter else { return nil }
+        return multiMode.fetchModes.first {
+            $0.id == selectedModeId && !$0.credentialFields.isEmpty
+        }
     }
 
     private var providerHeader: some View {

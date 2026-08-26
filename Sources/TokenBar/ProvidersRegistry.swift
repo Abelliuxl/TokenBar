@@ -10,6 +10,7 @@ public struct ProvidersRegistry {
         SiliconFlowAdapter(),
         DeepSeekAdapter(),
         VolcanoEngineAdapter(),
+        AlibabaBailianAdapter(),
         OpenRouterAdapter(),
         CodexAdapter()
     ])
