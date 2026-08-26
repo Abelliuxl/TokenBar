@@ -18,6 +18,44 @@ in the same quota row, for example `Resets in 4h 53m` or `Resets on Sep 26`.
 The adapter uses the accessible role and ARIA value as its primary selectors,
 with label and text fallbacks for locale or markup changes.
 
+## API balance path
+
+The Command Code CLI currently reads account credits from:
+
+```text
+GET https://api.commandcode.ai/alpha/billing/credits
+Authorization: Bearer <Command Code API key>
+```
+
+Observed response shape:
+
+```json
+{
+  "credits": {
+    "monthlyCredits": 69.9411858041,
+    "purchasedCredits": 0,
+    "freeCredits": 0
+  },
+  "windowLimits": {
+    "limited": true,
+    "fiveHour": { "used": 0.0588141959, "cap": 14, "exceeded": false, "resetAt": 1787744320560 },
+    "weekly": { "used": 0.0588141959, "cap": 35, "exceeded": false, "resetAt": 1788331120560 }
+  }
+}
+```
+
+TokenBar's API mode displays the three credit pools as USD balances and the
+rolling windows as percentage quotas. The endpoint is not listed in the
+published Provider API reference and lives under the undocumented `/alpha`
+namespace, so the decoder is intentionally tolerant and the web-session mode
+remains available as the default fallback.
+
+## TokenBar dual-mode implementation
+
+- `网页登录`: reuses the existing authenticated WebKit page session.
+- `余额 API`: reads a user-provided Command Code API key from the local
+  credential store and calls the credits endpoint directly without cookies.
+
 ## Brand logo
 
 The page uses the official Command Code mark from:
