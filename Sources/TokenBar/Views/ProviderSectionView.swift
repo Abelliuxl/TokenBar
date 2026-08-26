@@ -75,6 +75,13 @@ public struct ProviderSectionView: View {
         .onReceive(NotificationCenter.default.publisher(for: .tokenBarPopoverWillClose)) { _ in
             credentialMode = nil
         }
+        .onChange(of: credentialMode?.id) { _, modeID in
+            NotificationCenter.default.post(
+                name: .tokenBarCredentialEditorDidChange,
+                object: nil,
+                userInfo: ["isEditing": modeID != nil]
+            )
+        }
     }
 
     private func choose(mode: ProviderFetchMode, provider: any MultiModeProviderAdapter) {

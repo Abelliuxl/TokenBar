@@ -4,6 +4,7 @@ import Combine
 
 extension Notification.Name {
     static let tokenBarPopoverWillClose = Notification.Name("TokenBar.popoverWillClose")
+    static let tokenBarCredentialEditorDidChange = Notification.Name("TokenBar.credentialEditorDidChange")
 }
 
 @MainActor
@@ -17,6 +18,8 @@ public final class StatusBarController {
     private var localMouseMonitor: Any?
     private var globalMouseMonitor: Any?
     private var didResignActiveObserver: NSObjectProtocol?
+    private var credentialEditorObserver: NSObjectProtocol?
+    private var isEditingCredentials = false
 
     public init(appState: AppState, poller: Poller) {
         self.appState = appState
@@ -35,6 +38,7 @@ public final class StatusBarController {
 
         self.statusItem.button?.action = #selector(togglePopover(_:))
         self.statusItem.button?.target = self
+        installCredentialEditorObserver()
         installPopoverDismissalMonitors()
 
         appState.$snapshots
@@ -85,6 +89,25 @@ public final class StatusBarController {
                 self?.closePopover()
             }
         }
+    }
+
+    private func installCredentialEditorObserver() {
+        credentialEditorObserver = NotificationCenter.default.addObserver(
+            forName: .tokenBarCredentialEditorDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let isEditing = notification.userInfo?["isEditing"] as? Bool ?? false
+            DispatchQueue.main.async {
+                self?.setCredentialEditing(isEditing)
+            }
+        }
+    }
+
+    private func setCredentialEditing(_ isEditing: Bool) {
+        guard isEditingCredentials != isEditing else { return }
+        isEditingCredentials = isEditing
+        popover.behavior = isEditing ? .applicationDefined : .transient
     }
 
     private func handleLocalMouseDown(_ event: NSEvent) {
@@ -145,6 +168,10 @@ public final class StatusBarController {
     }
 
     private func closePopover() {
+        // Credential editing must survive switching to another app to copy
+        // multiple fields. Do not let any dismissal path destroy the sheet.
+        guard !isEditingCredentials else { return }
+
         // A SwiftUI sheet presented from inside an NSPopover can outlive the
         // popover when transient dismissal happens outside this controller.
         // Notify the hosted views and ask the hosting controller to dismiss
@@ -164,6 +191,9 @@ public final class StatusBarController {
         }
         if let didResignActiveObserver {
             NotificationCenter.default.removeObserver(didResignActiveObserver)
+        }
+        if let credentialEditorObserver {
+            NotificationCenter.default.removeObserver(credentialEditorObserver)
         }
     }
 
