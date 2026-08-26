@@ -33,6 +33,7 @@ open build/TokenBar.app
 | `deepseek` | DeepSeek | HTTP (cookie auth) | 余额 ¥ |
 | `volcano` | 火山引擎 | HTTP (cookie auth) | 余额 ¥ |
 | `openrouter` | OpenRouter | WKWebView + JS | Credits $ |
+| `command-code` | command code | WKWebView + JS | 5h / 周 / 月 |
 
 ## Adding a new Provider
 

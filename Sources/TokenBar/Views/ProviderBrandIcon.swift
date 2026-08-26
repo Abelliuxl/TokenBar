@@ -12,6 +12,7 @@ public enum BrandIcon: Sendable {
     case openRouter
     case openCode
     case codex
+    case commandCode
 }
 
 extension NSColor {
@@ -93,6 +94,16 @@ public struct ProviderBrandIconView: View {
             SVGBrandShape(pathData: BrandGlyphPaths.codex, viewBox: BrandGlyphPaths.codexBox)
                 .fill(Color.primary)
                 .frame(width: size, height: size)
+        case .commandCode:
+            ZStack {
+                SVGBrandShape(pathData: BrandGlyphPaths.commandCodeFrame,
+                              viewBox: BrandGlyphPaths.commandCodeBox)
+                    .fill(Color.primary, style: FillStyle(eoFill: true))
+                SVGBrandShape(pathData: BrandGlyphPaths.commandCodeGlyph,
+                              viewBox: BrandGlyphPaths.commandCodeBox)
+                    .fill(Color.primary)
+            }
+            .frame(width: size, height: size)
         }
     }
 }
