@@ -9,19 +9,50 @@ public final class AppState: ObservableObject {
     public init() {}
 
     public func update(snapshot: Snapshot) {
-        snapshots[snapshot.providerId] = snapshot
-        if case .error(let msg) = snapshot.status {
-            AppLog.network.error("[\(snapshot.providerId, privacy: .public)] fetch error: \(msg, privacy: .public)")
-            DiagnosticLog.record("result", "provider=\(snapshot.providerId) status=error reason=\(msg)")
-        } else if case .needsRelogin = snapshot.status {
-            AppLog.network.notice("[\(snapshot.providerId, privacy: .public)] needs relogin")
-            DiagnosticLog.record("result", "provider=\(snapshot.providerId) status=needsRelogin")
-        } else {
-            DiagnosticLog.record("result", "provider=\(snapshot.providerId) status=ok quotas=\(snapshot.quotas.count)")
+        let storedSnapshot = staleSnapshotIfTransientFailure(snapshot)
+        snapshots[storedSnapshot.providerId] = storedSnapshot
+        switch storedSnapshot.status {
+        case .error(let msg):
+            AppLog.network.error("[\(storedSnapshot.providerId, privacy: .public)] fetch error: \(msg, privacy: .public)")
+            DiagnosticLog.record("result", "provider=\(storedSnapshot.providerId) status=error reason=\(msg)")
+        case .stale(let msg):
+            AppLog.network.warning("[\(storedSnapshot.providerId, privacy: .public)] showing stale data after refresh error: \(msg, privacy: .public)")
+            DiagnosticLog.record("result", "provider=\(storedSnapshot.providerId) status=stale reason=\(msg) quotas=\(storedSnapshot.quotas.count)")
+        case .needsRelogin:
+            AppLog.network.notice("[\(storedSnapshot.providerId, privacy: .public)] needs relogin")
+            DiagnosticLog.record("result", "provider=\(storedSnapshot.providerId) status=needsRelogin")
+        case .ok:
+            DiagnosticLog.record("result", "provider=\(storedSnapshot.providerId) status=ok quotas=\(storedSnapshot.quotas.count)")
         }
-        if lastError != snapshot.providerId {
-            AppLog.network.debug("[\(snapshot.providerId, privacy: .public)] updated → \(snapshot.quotas.count) quotas")
+        if lastError != storedSnapshot.providerId {
+            AppLog.network.debug("[\(storedSnapshot.providerId, privacy: .public)] updated → \(storedSnapshot.quotas.count) quotas")
         }
+    }
+
+    private func staleSnapshotIfTransientFailure(_ snapshot: Snapshot) -> Snapshot {
+        guard case .error(let message) = snapshot.status,
+              Self.isTransientFailure(message),
+              let previous = snapshots[snapshot.providerId],
+              !previous.quotas.isEmpty else {
+            return snapshot
+        }
+
+        switch previous.status {
+        case .ok, .stale:
+            return Snapshot(
+                providerId: snapshot.providerId,
+                capturedAt: previous.capturedAt,
+                quotas: previous.quotas,
+                status: .stale(message)
+            )
+        case .needsRelogin, .error:
+            return snapshot
+        }
+    }
+
+    private static func isTransientFailure(_ message: String) -> Bool {
+        let value = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return value == "timeout" || value.hasPrefix("nav:")
     }
 
     public func clear(providerId: String) {
@@ -48,6 +79,7 @@ public final class AppState: ObservableObject {
             }
             if case .needsRelogin = snap.status { worst = max(worst, .danger) }
             if case .error = snap.status { worst = max(worst, .danger) }
+            if case .stale = snap.status { worst = max(worst, .warn) }
         }
         return worst
     }

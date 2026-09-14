@@ -217,8 +217,13 @@ public struct PopoverContentView: View {
 
     private func isBalanceProvider(_ provider: any ProviderAdapter) -> Bool {
         guard let snapshot = appState.snapshots[provider.id],
-              case .ok = snapshot.status,
               !snapshot.quotas.isEmpty else {
+            return false
+        }
+        switch snapshot.status {
+        case .ok, .stale:
+            break
+        case .needsRelogin, .error:
             return false
         }
         return snapshot.quotas.allSatisfy(\.isCurrency)

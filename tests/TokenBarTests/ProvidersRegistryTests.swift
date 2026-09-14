@@ -224,6 +224,18 @@ final class OpenCodeGoAdapterTests: XCTestCase {
 }
 
 final class CommandCodeAdapterTests: XCTestCase {
+    func test_networkTolerantWebViewConfiguration() {
+        let adapter = CommandCodeAdapter()
+
+        XCTAssertEqual(adapter.navigationTimeout, 90)
+        XCTAssertEqual(adapter.maximumNavigationAttempts, 2)
+        XCTAssertEqual(adapter.harvestDelay, 2)
+        XCTAssertTrue(adapter.harvestOnNavigationCommit)
+        XCTAssertEqual(adapter.maximumHarvestAttempts, 20)
+        XCTAssertEqual(adapter.harvestRetryDelay, 2)
+        XCTAssertEqual(adapter.navigationRequestCachePolicy, .reloadIgnoringLocalCacheData)
+    }
+
     func test_parseUsesFiveHourWeeklyAndMonthlyPercentages() {
         let harvest = """
         {
@@ -269,6 +281,21 @@ final class AppStateTests: XCTestCase {
         let snap2 = Snapshot(providerId: "x", quotas: [], status: .needsRelogin)
         state.update(snapshot: snap2)
         XCTAssertEqual(state.snapshots["x"]?.status, .needsRelogin)
+    }
+
+    @MainActor func test_transientRefreshErrorKeepsLastSuccessfulQuotasAsStale() {
+        let state = AppState()
+        let quota = Quota(id: "fiveHour", label: "5 小时限额", used: 12, total: 100, unit: "%")
+        state.update(snapshot: Snapshot(providerId: "command-code", quotas: [quota], status: .ok))
+        state.update(snapshot: Snapshot(providerId: "command-code", quotas: [], status: .error("timeout")))
+
+        guard let snapshot = state.snapshots["command-code"] else {
+            return XCTFail("Expected the previous snapshot to be retained")
+        }
+        XCTAssertEqual(snapshot.quotas, [quota])
+        guard case .stale("timeout") = snapshot.status else {
+            return XCTFail("Expected a transient error to produce a stale snapshot")
+        }
     }
 }
 

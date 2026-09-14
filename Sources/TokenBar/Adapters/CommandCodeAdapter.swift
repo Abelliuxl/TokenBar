@@ -73,8 +73,23 @@ public final class CommandCodeAdapter: WebViewAdapter {
                    brandIcon: .commandCode)
     }
 
-    public override var maximumHarvestAttempts: Int { 3 }
-    public override var harvestRetryDelay: TimeInterval { 1 }
+    // Command Code renders the quota cards after the document navigation has
+    // finished, and the backing request can be slow during network spikes.
+    // Start harvesting as soon as the document commits, then keep polling the
+    // same page instead of declaring a false "timeout" while the cards load.
+    public override var navigationTimeout: TimeInterval { 90 }
+    public override var maximumNavigationAttempts: Int { 2 }
+    public override var navigationRetryDelay: TimeInterval { 2 }
+    public override var harvestDelay: TimeInterval { 2 }
+    public override var harvestOnNavigationCommit: Bool { true }
+    public override var navigationRequestCachePolicy: URLRequest.CachePolicy {
+        .reloadIgnoringLocalCacheData
+    }
+    public override var navigationRequestHeaders: [String: String] {
+        ["Cache-Control": "no-cache"]
+    }
+    public override var maximumHarvestAttempts: Int { 20 }
+    public override var harvestRetryDelay: TimeInterval { 2 }
 
     public override func shouldRetry(harvest: Any?) -> Bool {
         guard let json = harvest as? String,

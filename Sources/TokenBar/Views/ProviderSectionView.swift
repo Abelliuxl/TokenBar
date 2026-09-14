@@ -114,6 +114,15 @@ public struct ProviderSectionView: View {
                     } else {
                         credentialAction
                     }
+                case .stale(let msg):
+                    ForEach(snap.quotas) { q in QuotaRowView(quota: q) }
+                    Label("刷新失败，显示上次成功数据", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption)
+                    Text(msg)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 case .error(let msg):
                     Text(msg).font(.caption).foregroundStyle(.red)
                         .lineLimit(4)
@@ -156,6 +165,15 @@ public struct ProviderSectionView: View {
             if let snapshot {
                 ForEach(snapshot.quotas) { quota in
                     QuotaRowView(quota: quota)
+                }
+                if case .stale(let msg) = snapshot.status {
+                    Label("刷新失败，显示上次成功数据", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.caption2)
+                    Text(msg)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
         }

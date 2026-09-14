@@ -2,6 +2,9 @@ import Foundation
 
 public enum ProviderStatus: Sendable, Equatable {
     case ok
+    /// The latest refresh failed, but the displayed quotas come from the last
+    /// successful snapshot and are therefore intentionally stale.
+    case stale(String)
     case needsRelogin
     case error(String)
 }
