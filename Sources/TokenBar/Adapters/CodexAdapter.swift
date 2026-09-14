@@ -1,146 +1,92 @@
 import Foundation
 
-/// Adapter for local Codex usage.
+/// Adapter for ChatGPT/Codex plan usage.
 ///
-/// This does not start a Codex session. It reads recent local Codex session
-/// JSONL files and extracts the latest `token_count` event, which includes
-/// rate-limit percentages emitted by Codex itself.
-public struct CodexAdapter: ProviderAdapter {
-    public let id = "codex"
+/// Codex CLI no longer records rate-limit events in `~/.codex/sessions`, which
+/// is what the original adapter scanned, so usage is read from the backend
+/// behind <https://chatgpt.com/codex/cloud/settings/analytics#usage> instead.
+///
+/// - `cliToken` (default): reuses the ChatGPT login Codex CLI already stored in
+///   `~/.codex/auth.json`, so the card keeps working with no extra login.
+/// - `webSession`: reads the same endpoint from inside the logged-in WebKit
+///   session, for machines where Codex CLI is not logged in.
+///
+/// See `docs/research/codex-research.md` for the endpoint notes.
+public struct CodexAdapter: MultiModeProviderAdapter {
+    public static let usagePageURL = URL(string: "https://chatgpt.com/codex/cloud/settings/analytics#usage")!
+
+    public let id = CodexUsageAPI.providerId
     public var displayName: String { "Codex" }
     public var iconSystemName: String { "terminal.fill" }
     public var brandIcon: BrandIcon? { .codex }
-    public var loginURL: URL { URL(string: "https://chatgpt.com/codex")! }
+    public var loginURL: URL { Self.usagePageURL }
+
+    public let defaultFetchModeId = CodexFetchMode.cliToken
+    public let fetchModes = [
+        ProviderFetchMode(id: CodexFetchMode.cliToken, title: "Codex 登录态"),
+        ProviderFetchMode(id: CodexFetchMode.webSession, title: "网页登录"),
+    ]
+
+    private let webSession = HTTPAdapter(
+        id: CodexUsageAPI.providerId,
+        displayName: "Codex",
+        iconSystemName: "terminal.fill",
+        loginURL: CodexAdapter.usagePageURL,
+        method: "GET",
+        url: CodexUsageAPI.endpoint,
+        headers: ["Accept": "application/json"],
+        decoder: { data in CodexUsageAPI.snapshot(from: data) }
+    )
 
     public init() {}
 
     public func fetch() async -> Snapshot {
-        await CodexReadCache.shared.snapshot {
-            self.readSnapshot()
-        }
+        await CodexReadCache.shared.snapshot { await self.fetchUncached() }
     }
 
-    private func readSnapshot() -> Snapshot {
-        let sessionsDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/sessions", isDirectory: true)
-
-        guard FileManager.default.fileExists(atPath: sessionsDir.path) else {
-            return Snapshot(providerId: id, quotas: [], status: .error("未找到 Codex 会话目录"))
+    private func fetchUncached() async -> Snapshot {
+        guard ProviderFetchModeStore.selectedModeId(for: self) == CodexFetchMode.webSession else {
+            return await fetchUsingCLILogin()
         }
-
-        guard let event = Self.latestTokenCountEvent(in: sessionsDir) else {
-            return Snapshot(providerId: id, quotas: [], status: .error("未找到 Codex 用量记录；先在 Codex 中运行 /status"))
-        }
-
-        var quotas: [Quota] = []
-        if let primary = event.primary {
-            quotas.append(Self.quota(id: "primary", label: Self.windowLabel(primary.windowMinutes), limit: primary))
-        }
-        if let secondary = event.secondary {
-            quotas.append(Self.quota(id: "secondary", label: Self.windowLabel(secondary.windowMinutes), limit: secondary))
-        }
-
-        if quotas.isEmpty {
-            return Snapshot(providerId: id, quotas: [], status: .error("Codex 用量记录缺少 rate limit 字段"))
-        }
-        return Snapshot(providerId: id, quotas: quotas, status: .ok)
+        return await webSession.fetch()
     }
 
-    private static func latestTokenCountEvent(in root: URL) -> TokenCountEvent? {
-        guard let enumerator = FileManager.default.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
+    /// Uses the ChatGPT login Codex CLI maintains locally. When that login is
+    /// missing or rejected the browser session takes over, so a web login can
+    /// keep the card alive without the user switching modes by hand.
+    private func fetchUsingCLILogin() async -> Snapshot {
+        guard let credentials = CodexAuthFile.load() else {
+            return await webSessionFallback(reason: "未找到 Codex CLI 登录态 (~/.codex/auth.json)")
         }
-
-        var files: [(url: URL, modifiedAt: Date)] = []
-        for case let url as URL in enumerator {
-            guard url.pathExtension == "jsonl" else { continue }
-            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .isRegularFileKey])
-            guard values?.isRegularFile == true else { continue }
-            files.append((url, values?.contentModificationDate ?? .distantPast))
-        }
-
-        for file in files.sorted(by: { $0.modifiedAt > $1.modifiedAt }).prefix(40) {
-            if let event = latestTokenCountEvent(inFile: file.url) {
-                return event
-            }
-        }
-        return nil
-    }
-
-    private static func latestTokenCountEvent(inFile url: URL) -> TokenCountEvent? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-
-        let size = (try? handle.seekToEnd()) ?? 0
-        let maxBytes: UInt64 = 1_048_576
-        let start = size > maxBytes ? size - maxBytes : 0
-        try? handle.seek(toOffset: start)
-        let data = handle.readDataToEndOfFile()
-        guard var text = String(data: data, encoding: .utf8) else { return nil }
-        if start > 0, let newline = text.firstIndex(of: "\n") {
-            text = String(text[text.index(after: newline)...])
-        }
-
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
-            guard line.contains(#""token_count""#),
-                  let data = String(line).data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let payload = obj["payload"] as? [String: Any],
-                  payload["type"] as? String == "token_count",
-                  let limits = payload["rate_limits"] as? [String: Any] else {
-                continue
-            }
-            return TokenCountEvent(
-                primary: RateLimit(limits["primary"] as? [String: Any]),
-                secondary: RateLimit(limits["secondary"] as? [String: Any])
-            )
-        }
-        return nil
-    }
-
-    private static func quota(id: String, label: String, limit: RateLimit) -> Quota {
-        let resetText: String?
-        if let resetsAt = limit.resetsAt {
-            resetText = "重置 \(Self.timeFormatter.string(from: resetsAt))"
-        } else {
-            resetText = nil
-        }
-        return Quota(
-            id: id,
-            label: label,
-            used: limit.usedPercent,
-            total: 100,
-            unit: "%",
-            resetsAt: limit.resetsAt,
-            resetText: resetText
+        let snapshot = await CodexUsageAPI.fetch(
+            accessToken: credentials.accessToken,
+            accountId: credentials.accountId
         )
+        if case .needsRelogin = snapshot.status {
+            return await webSessionFallback(reason: "Codex CLI 登录态已失效")
+        }
+        return snapshot
     }
 
-    private static func windowLabel(_ minutes: Int?) -> String {
-        guard let minutes else { return "额度" }
-        if minutes >= 60 * 24 {
-            return "\(minutes / (60 * 24))天"
+    private func webSessionFallback(reason: String) async -> Snapshot {
+        let webSnapshot = await webSession.fetch()
+        if case .needsRelogin = webSnapshot.status {
+            return Snapshot(providerId: id, quotas: [], status: .error(
+                "\(reason)，网页登录态也不可用。请运行一次 codex 刷新登录，或在右键菜单选择“爬取模式 → 网页登录”后重新登录。"
+            ))
         }
-        if minutes >= 60 {
-            return "\(minutes / 60)小时"
-        }
-        return "\(minutes)分"
+        return webSnapshot
     }
-
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MM-dd HH:mm"
-        return formatter
-    }()
 }
 
-/// Serializes local Codex reads and avoids rescanning the session tree for
-/// repeated clicks. The cache is intentionally short-lived: a manual refresh
-/// always becomes eligible again after five seconds.
+public enum CodexFetchMode {
+    public static let cliToken = "cliToken"
+    public static let webSession = "webSession"
+}
+
+/// Serializes Codex reads and avoids refetching for repeated clicks. The cache
+/// is intentionally short-lived: a manual refresh always becomes eligible again
+/// after five seconds.
 actor CodexReadCache {
     static let shared = CodexReadCache()
 
@@ -155,41 +101,31 @@ actor CodexReadCache {
     }
 
     func snapshot(_ read: @Sendable () -> Snapshot) -> Snapshot {
-        let now = clock()
-        if let lastReadAt,
-           let cachedSnapshot,
-           now.timeIntervalSince(lastReadAt) < cooldown {
-            return cachedSnapshot
-        }
+        if let cached = cachedSnapshotIfFresh() { return cached }
 
         let snapshot = read()
-        lastReadAt = now
+        lastReadAt = clock()
         cachedSnapshot = snapshot
         return snapshot
     }
-}
 
-private struct TokenCountEvent {
-    let primary: RateLimit?
-    let secondary: RateLimit?
-}
+    /// Async variant for the network fetch. Concurrent callers may still race
+    /// into a duplicate request, but the poller already coalesces its ticks, so
+    /// the cooldown only has to absorb rapid manual refreshes.
+    func snapshot(_ read: @Sendable () async -> Snapshot) async -> Snapshot {
+        if let cached = cachedSnapshotIfFresh() { return cached }
 
-private struct RateLimit {
-    let usedPercent: Double
-    let windowMinutes: Int?
-    let resetsAt: Date?
+        let snapshot = await read()
+        lastReadAt = clock()
+        cachedSnapshot = snapshot
+        return snapshot
+    }
 
-    init?(_ obj: [String: Any]?) {
-        guard let obj,
-              let usedPercent = obj["used_percent"] as? Double ?? (obj["used_percent"] as? NSNumber)?.doubleValue else {
+    private func cachedSnapshotIfFresh() -> Snapshot? {
+        guard let lastReadAt, let cachedSnapshot,
+              clock().timeIntervalSince(lastReadAt) < cooldown else {
             return nil
         }
-        self.usedPercent = usedPercent
-        self.windowMinutes = obj["window_minutes"] as? Int ?? (obj["window_minutes"] as? NSNumber)?.intValue
-        if let seconds = obj["resets_at"] as? Double ?? (obj["resets_at"] as? NSNumber)?.doubleValue {
-            self.resetsAt = Date(timeIntervalSince1970: seconds)
-        } else {
-            self.resetsAt = nil
-        }
+        return cachedSnapshot
     }
 }

@@ -35,6 +35,7 @@ open build/TokenBar.app
 | `bailian` | 阿里百炼 | 纯 HTTP + AccessKey 凭证 | 账户余额 ¥ |
 | `openrouter` | OpenRouter | 网页登录 / 官方 API | Credits $ |
 | `command-code` | command code | WKWebView + JS | 5h / 周 / 月 |
+| `codex` | Codex | Codex 登录态 / 网页登录 | 5h / 周 |
 
 ## Adding a new Provider
 
@@ -97,9 +98,28 @@ open build/TokenBar.app
 
 TokenBar 在进程内实现阿里云 BSS RPC 签名，调用 `QueryAccountBalance` 获取账户余额；不引入阿里云 SDK、第三方网络库或 OAuth 依赖。建议为 TokenBar 单独创建仅有 `AliyunBSSReadOnlyAccess` 权限的 RAM 用户。
 
+## Codex 获取方式
+
+Codex 的用量现在只在网页查看：`https://chatgpt.com/codex/cloud/settings/analytics#usage`。该页面调用的后端接口是：
+
+```
+GET https://chatgpt.com/backend-api/wham/usage
+Authorization: Bearer <ChatGPT access token>
+```
+
+响应里的 `rate_limit.primary_window`（5 小时）和 `rate_limit.secondary_window`（周）就是面板上的两条额度。右键 Codex 卡片 →「爬取模式」可二选一：
+
+- **Codex 登录态**（默认）：直接复用 Codex CLI 已经保存的 ChatGPT 登录态 `~/.codex/auth.json`，不需要在 TokenBar 里再登录一次。
+- **网页登录**：在 TokenBar 的 WKWebView 里登录 chatgpt.com，用同一套 cookie 调该接口。
+
+> 早期版本靠解析 Codex CLI 写进 `~/.codex/sessions/**/*.jsonl` 的 `token_count` 事件；Codex 已不再记录这些事件，所以改成直接读上述接口。
+
+TokenBar **只读**该文件，不会刷新或回写 token —— 刷新是 Codex CLI 自己的事，避免提前轮换掉它的 refresh token。当 `~/.codex/auth.json` 缺失或登录态失效时，会自动退回网页登录态；两者都不可用才提示重新登录。
+
 ## Privacy
 
 - 登录态由 **WKWebView persistent website data store** 保存；开放 API 凭据保存在本机 TokenBar 配置中
+- Codex 模式会**只读**本机 `~/.codex/auth.json`，用于调用 ChatGPT 官方用量接口；不写入、不上报
 - 没有任何 telemetry、上报、远端统计
 - 出站网络流量**仅**到各 Provider 自己的域名（WKWebView 登录页 / API endpoint）
 - `secret_scan.sh` 在 build 前扫描源码，确保没有真实 secret 泄漏到 git

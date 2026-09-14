@@ -37,6 +37,17 @@ final class ProvidersRegistryTests: XCTestCase {
             XCTAssertEqual(multiMode.fetchModes.last?.credentialFields.map(\.id), ["apiKey"])
         }
     }
+
+    func testCodexExposesCLILoginAndWebSessionModes() {
+        guard let provider = ProvidersRegistry.default.adapters.first(where: { $0.id == "codex" }),
+              let multiMode = provider as? any MultiModeProviderAdapter else {
+            return XCTFail("Expected codex to support multiple fetch modes")
+        }
+        XCTAssertEqual(multiMode.defaultFetchModeId, "cliToken")
+        XCTAssertEqual(multiMode.fetchModes.map(\.id), ["cliToken", "webSession"])
+        XCTAssertEqual(multiMode.loginURL.absoluteString,
+                       "https://chatgpt.com/codex/cloud/settings/analytics#usage")
+    }
 }
 
 final class OfficialBalanceAPITests: XCTestCase {
@@ -340,5 +351,76 @@ final class CodexReadCacheTests: XCTestCase {
         XCTAssertEqual(counter.value, 2)
         XCTAssertEqual(cached, first)
         XCTAssertEqual(refreshed.status, .ok)
+    }
+}
+
+/// Body captured from `GET https://chatgpt.com/backend-api/wham/usage` on
+/// 2026-09-14, which is what the Codex web analytics page reads.
+final class CodexUsageTests: XCTestCase {
+    private let body = Data("""
+    {
+      "plan_type": "plus",
+      "rate_limit": {
+        "allowed": true,
+        "limit_reached": false,
+        "primary_window":   { "used_percent":  0, "limit_window_seconds":  18000, "reset_at": 1789392717 },
+        "secondary_window": { "used_percent": 16, "limit_window_seconds": 604800, "reset_at": 1789959481 }
+      }
+    }
+    """.utf8)
+
+    func test_decodesWindowsWithHumanReadableLabels() {
+        let snapshot = CodexUsageAPI.snapshot(from: body)
+
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.map(\.id), ["primary", "secondary"])
+        XCTAssertEqual(snapshot.quotas.map(\.label), ["5小时", "7天"])
+        XCTAssertEqual(snapshot.quotas.map(\.used), [0, 16])
+        XCTAssertEqual(snapshot.quotas.map(\.total), [100, 100])
+        XCTAssertEqual(snapshot.quotas.map(\.unit), ["%", "%"])
+        XCTAssertEqual(snapshot.quotas.first?.resetsAt, Date(timeIntervalSince1970: 1789392717))
+        XCTAssertEqual(snapshot.quotas.last?.fraction ?? 0, 0.16, accuracy: 0.000001)
+    }
+
+    func test_windowLabelFallsBackWhenTheWindowIsMissing() {
+        XCTAssertEqual(CodexUsageAPI.windowLabel(seconds: 18000), "5小时")
+        XCTAssertEqual(CodexUsageAPI.windowLabel(seconds: 604800), "7天")
+        XCTAssertEqual(CodexUsageAPI.windowLabel(seconds: nil), "额度")
+    }
+
+    func test_unauthorizedBodyIsReportedAsAnError() {
+        let snapshot = CodexUsageAPI.snapshot(from: Data(#"{"detail":"Unauthorized"}"#.utf8))
+
+        guard case .error(let message) = snapshot.status else {
+            return XCTFail("Expected an error status, got \(snapshot.status)")
+        }
+        XCTAssertTrue(message.contains("Unauthorized"), message)
+    }
+
+    func test_missingAuthFileYieldsNoCredentials() {
+        let missing = URL(fileURLWithPath: "/nonexistent/codex/auth.json")
+        XCTAssertNil(CodexAuthFile.load(from: missing))
+    }
+
+    func test_authFileReadsTokensAndAccountId() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tokenbar-codex-auth-\(UUID().uuidString).json")
+        try Data("""
+        { "auth_mode": "chatgpt", "tokens": { "access_token": "test-token", "account_id": "acct-1" } }
+        """.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let credentials = try XCTUnwrap(CodexAuthFile.load(from: url))
+        XCTAssertEqual(credentials.accessToken, "test-token")
+        XCTAssertEqual(credentials.accountId, "acct-1")
+    }
+
+    func test_authFileIgnoresApiKeyOnlyLogins() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tokenbar-codex-auth-\(UUID().uuidString).json")
+        try Data(#"{ "auth_mode": "apikey", "OPENAI_API_KEY": "sk-test" }"#.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        XCTAssertNil(CodexAuthFile.load(from: url))
     }
 }
