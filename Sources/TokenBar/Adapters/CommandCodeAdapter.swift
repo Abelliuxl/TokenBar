@@ -5,8 +5,29 @@ import WebKit
 ///
 /// The page exposes each quota as an accessible `progressbar`, including a
 /// language-neutral `aria-valuenow` percentage and a human-readable reset
-/// message. The default path reads from the authenticated WebView session.
-public final class CommandCodeAdapter: WebViewAdapter {
+/// message. CLI billing APIs are preferred; WebKit remains the fallback.
+public final class CommandCodeAdapter: WebViewAdapter, MultiModeProviderAdapter {
+    public let defaultFetchModeId = "cliToken"
+    public let fetchModes = [
+        ProviderFetchMode(id: "cliToken", title: "CLI 登录态 / API"),
+        ProviderFetchMode(id: "webSession", title: "网页登录")
+    ]
+
+    public override func fetch() async -> Snapshot {
+        if ProviderFetchModeStore.selectedModeId(for: self) == "webSession" {
+            return await super.fetch()
+        }
+        guard let key = CommandCodeAPI.loadKey() else { return await super.fetch() }
+        let snapshot = await CommandCodeAPI.fetch(apiKey: key)
+        if case .ok = snapshot.status { return snapshot }
+        // A browser session can fill missing API windows or survive a rejected key.
+        let web = await super.fetch()
+        if case .ok = web.status, web.quotas.count == 3 { return web }
+        if !snapshot.quotas.isEmpty { return snapshot }
+        if !web.quotas.isEmpty { return web }
+        return snapshot
+    }
+
     public init() {
         let js = """
         (function() {

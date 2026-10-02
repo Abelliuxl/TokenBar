@@ -30,6 +30,30 @@ public final class AppState: ObservableObject {
     }
 
     private func staleSnapshotIfTransientFailure(_ snapshot: Snapshot) -> Snapshot {
+        if snapshot.providerId == "command-code" {
+            let ids = ["fiveHour", "weekly", "monthly"]
+            switch snapshot.status {
+            case .ok, .stale:
+                if ids.contains(where: { id in !snapshot.quotas.contains { $0.id == id } }) {
+                    let previous = snapshots[snapshot.providerId]
+                    let merged = ids.compactMap { id in
+                        if let current = snapshot.quotas.first(where: { $0.id == id }) { return current }
+                        guard let old = previous?.quotas.first(where: { $0.id == id }) else { return nil }
+                        let text = old.resetText?.replacingOccurrences(of: " · 上次数据", with: "") ?? ""
+                        return Quota(id: old.id, label: old.label, used: old.used, total: old.total,
+                                     unit: old.unit, resetsAt: old.resetsAt, resetText: text + " · 上次数据")
+                    }
+                    return Snapshot(providerId: snapshot.providerId, quotas: merged,
+                                    status: .stale("部分额度未更新；缺失项保留上次数据"))
+                }
+            case .error(let message):
+                if let previous = snapshots[snapshot.providerId], !previous.quotas.isEmpty {
+                    return Snapshot(providerId: snapshot.providerId, capturedAt: previous.capturedAt,
+                                    quotas: previous.quotas, status: .stale(message))
+                }
+            case .needsRelogin: break
+            }
+        }
         guard case .error(let message) = snapshot.status,
               Self.isTransientFailure(message),
               let previous = snapshots[snapshot.providerId],

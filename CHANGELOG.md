@@ -2,6 +2,14 @@
 
 All notable changes to TokenBar are documented here.
 
+## [Unreleased] - 2026-10-02
+
+- Command Code defaults to read-only CLI credentials and billing APIs, with
+  selectable web login and automatic browser fallback.
+- Missing Command Code quota rows retain their last known values with a stale
+  marker; API failures no longer blank previously fetched quotas.
+- Added executable Command Code checks including optional live API validation.
+
 ## [Unreleased] - 2026-09-14
 
 ### Added

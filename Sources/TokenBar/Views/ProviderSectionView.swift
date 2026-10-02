@@ -116,7 +116,7 @@ public struct ProviderSectionView: View {
                     }
                 case .stale(let msg):
                     ForEach(snap.quotas) { q in QuotaRowView(quota: q) }
-                    Label("刷新失败，显示上次成功数据", systemImage: "exclamationmark.triangle.fill")
+                    Label("部分数据未更新，详见下方提示", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .font(.caption)
                     Text(msg)

@@ -3,6 +3,34 @@
 Provider: command code  
 Usage URL: https://commandcode.ai/Abelliuxl/settings/usage
 
+## CLI API mode (verified 2026-10-02)
+
+Default mode reads only `apiKey` from `~/.commandcode/auth.json`; it never
+refreshes, rewrites or logs credentials. It uses the official CLI's
+`https://api.commandcode.ai/alpha/whoami?limits=1` to determine organization
+scope, then `billing/credits` and `billing/subscriptions` with the same orgId.
+Requests include `User-Agent: command-code`; initial Python requests without
+that header returned 403, while Swift URLSession requests with it succeeded.
+
+- `windowLimits.fiveHour` / `weekly`: `used / cap * 100`, with epoch-ms `resetAt`.
+- GOAT monthly: `(70 - credits.monthlyCredits) / 70 * 100`; requires an active
+  `individual-goat` subscription and a valid `currentPeriodEnd`. Unknown plans
+  omit monthly percentage rather than inventing a cap.
+- `usage/summary.totalCost` is not the monthly credit decrement and is not used.
+- Verified percentages 0.94 / 21.54 / 10.77 match the supplied webpage's rounded
+  1 / 22 / 11. Reset timestamps are displayed in the Mac's local timezone;
+  2026-10-26 16:28 UTC is October 27 00:28 in Asia/Shanghai.
+- A missing key, failed API request or partial response falls back to WebKit.
+  Partial snapshots preserve missing rows from the previous snapshot with an
+  explicit stale marker. Failed reads retain previous quotas. No persistent
+  quota cache or credentials migration is introduced.
+- These are undocumented CLI endpoints; account revocation and upstream changes
+  remain possible. The selectable web mode remains available.
+
+Validation: `scripts/test-command-code.sh --live` covers percentage mapping,
+timestamps, missing subscription, invalid numeric fields, unknown plans, stale
+retention/recovery, and a real URLSession request returning all three windows.
+
 ## Observed usage structure
 
 The authenticated page exposes three usage-limit progress bars:
