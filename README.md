@@ -9,6 +9,7 @@ macOS menu bar app that shows your AI / cloud service quotas at a glance.
 ```bash
 ./scripts/build.sh       # 生成 build/TokenBar.app
 ./scripts/smoke.sh       # 启动 .app，4 秒后看是否还活着
+./scripts/test.sh        # 编译并运行 tests/TokenBarTests 的 XCTest
 open build/TokenBar.app
 ```
 
@@ -77,9 +78,18 @@ open build/TokenBar.app
 - 页面字段：从选中文字所在的 DOM 元素生成 CSS selector；
 - 接口字段：从页面后续的 fetch/XHR JSON 响应中寻找与选中文字匹配的余额、额度或用量字段。
 
-候选项会按语义、数值和选中文本的匹配程度排序。确认后，规则会保存到本机 `UserDefaults`，登录态继续使用 WKWebView 的持久 cookie store。后续轮询会使用保存的 DOM 或 API 规则，不需要为该站点新增 Swift 文件。
+候选项会按语义、数值和选中文本的匹配程度排序；弹窗里可以顺手改字段的显示名称。确认后，规则会保存到本机 `UserDefaults`，登录态继续使用 WKWebView 的持久 cookie store。后续轮询会使用保存的 DOM 或 API 规则，不需要为该站点新增 Swift 文件。
 
-删除自定义站点只删除 TokenBar 的配置和展示项；如需彻底清理该站点的登录 cookie，需要在系统中清理对应网站数据。
+网站改版后如果数值不对，重新选一次即可，不必删除重建：
+
+- 面板里右键该站点 → **重新选择字段…**（会直接进入选字段模式）
+- 设置 → 自定义站点 → 每行的 ⛳️ 按钮；同一行还能直接改名
+
+两种方式都会覆盖原条目，保留它的 id、排序和启用状态。删除自定义站点只删除 TokenBar 的配置和展示项；如需彻底清理该站点的登录 cookie，需要在系统中清理对应网站数据。
+
+#### 余额与进度条
+
+自定义字段保存时会记录单位，面板据此决定显示方式：余额显示为数值（`¥500.00`），用量窗口显示为进度条（`42% 已用`）。页面上的货币符号按原样抓取，所以 `￥`(U+FFE5) 和 `¥`(U+00A5)、`元`、`CNY`、`RMB` 都会被归一到同一个符号；`credits`、`tokens` 这类非货币余额显示为纯数值加单位，而不是空进度条。
 
 合约类型在 `Sources/TokenBar/Adapters/Core/ProviderAdapter.swift`。"Provider Registry 完全硬编码"是 v1 决策，不提供 JSON/UI 配置。
 
@@ -174,10 +184,12 @@ TokenBar/
 │   ├── inspect.sh       # Chrome CDP endpoint discovery tool
 │   │   └── Inspector/   # Swift source for the inspector
 │   ├── smoke.sh         # Smoke test
+│   ├── test.sh          # Build the module and run the XCTest bundle
 │   ├── generate_icon.py # App icon generation
 │   └── secret_scan.sh   # Pre-build secret scanner
 ├── Resources/
 ├── tests/
+│   └── TokenBarTests/   # XCTest sources (run via scripts/test.sh)
 ├── docs/
 │   ├── research/        # Per-provider endpoint research notes (*.md)
 │   └── superpowers/     # Design specs and implementation plans

@@ -2,6 +2,29 @@
 
 All notable changes to TokenBar are documented here.
 
+## [Unreleased] - 2026-10-19
+
+### Fixed
+
+- Custom-site balances no longer render as an empty progress bar when the page
+  uses the fullwidth yuan sign (￥, U+FFE5). Units are now normalized before
+  being compared, so ￥/¥, 元, CNY and RMB all resolve to the same currency, and
+  `€`, `£` and ISO codes (HKD, SGD…) are recognized as money too.
+- Balances in `credits`/`tokens` (or any non-currency unit) display as a plain
+  amount instead of an empty bar. Real used/total windows still use a bar.
+- `CustomProviderRuntime.numbers` no longer reads a fragment of an identifier
+  as an amount (`abc123` used to yield `23`).
+
+### Added
+
+- Right-click a custom site → **重新选择字段…** re-picks its DOM/API field rule
+  in place, keeping the entry's id, order and enabled state. Settings → 自定义
+  站点 has the same action per row, plus inline rename.
+- The candidate picker accepts an edited display name, so fields the page
+  exposes no label for are no longer stuck with the generic "页面余额".
+- `scripts/test.sh` builds the module and runs `tests/TokenBarTests` as an
+  XCTest bundle; the custom-field path now has unit tests.
+
 ## [Unreleased] - 2026-10-02
 
 - Command Code defaults to read-only CLI credentials and billing APIs, with

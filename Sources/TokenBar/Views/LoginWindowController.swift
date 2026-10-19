@@ -13,7 +13,8 @@ public final class LoginWindowController: NSWindowController, WKNavigationDelega
 
     public init(provider: any ProviderAdapter,
                 onFinish: @escaping () -> Void,
-                onFieldRuleSelected: ((CustomFieldRule) -> Void)? = nil) {
+                onFieldRuleSelected: ((CustomFieldRule) -> Void)? = nil,
+                autoStartSelection: Bool = false) {
         let win = NSWindow(
             contentRect: .init(x: 0, y: 0, width: 900, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -81,6 +82,13 @@ public final class LoginWindowController: NSWindowController, WKNavigationDelega
 
         self.webView.load(URLRequest(url: provider.loginURL))
 
+        // Re-picking a field for an existing site is the whole reason this
+        // window was opened, so arm selection instead of making the user find
+        // the button first.
+        if autoStartSelection {
+            beginFieldSelection()
+        }
+
         NotificationCenter.default.addObserver(self, selector: #selector(windowWillClose),
                                                name: NSWindow.willCloseNotification, object: win)
     }
@@ -99,21 +107,26 @@ public final class LoginWindowController: NSWindowController, WKNavigationDelega
 
     @objc private func toggleFieldSelection() {
         guard onFieldRuleSelected != nil else { return }
-        selectionMode.toggle()
         if selectionMode {
-            selectFieldButton.title = "停止选择"
-            statusLabel.stringValue = "正在准备字段选择，页面将刷新一次以捕获接口数据…"
-            webView.configuration.userContentController.addUserScript(WKUserScript(
-                source: FieldProbeScripts.enableCaptureAtDocumentStart,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            ))
-            webView.evaluateJavaScript(FieldProbeScripts.startSelection) { [weak self] _, _ in
-                guard let self else { return }
-                self.webView.reload()
-            }
-        } else {
             stopFieldSelection()
+        } else {
+            beginFieldSelection()
+        }
+    }
+
+    private func beginFieldSelection() {
+        guard onFieldRuleSelected != nil, !selectionMode else { return }
+        selectionMode = true
+        selectFieldButton.title = "停止选择"
+        statusLabel.stringValue = "正在准备字段选择，页面将刷新一次以捕获接口数据…"
+        webView.configuration.userContentController.addUserScript(WKUserScript(
+            source: FieldProbeScripts.enableCaptureAtDocumentStart,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+        webView.evaluateJavaScript(FieldProbeScripts.startSelection) { [weak self] _, _ in
+            guard let self else { return }
+            self.webView.reload()
         }
     }
 
@@ -190,18 +203,20 @@ public final class LoginWindowController: NSWindowController, WKNavigationDelega
             return
         }
 
+        let picker = FieldCandidatePicker(candidates: candidates)
         let alert = NSAlert()
         alert.messageText = "选择要保存的字段"
-        alert.informativeText = "已选文本：\(selectedText)\n候选项按可能性从高到低排列。"
-        let popup = NSPopUpButton(frame: .init(x: 0, y: 0, width: 560, height: 26), pullsDown: false)
-        candidates.forEach { popup.addItem(withTitle: $0.title) }
-        alert.accessoryView = popup
-        alert.addButton(withTitle: "确定")
+        alert.informativeText = """
+        已选文本：\(selectedText)
+        候选项按可能性从高到低排列；「页面」来自网页元素，「接口」来自页面加载的数据。
+        改版后如果数值不对，可随时用右键菜单的「重新选择字段」再换一个。
+        """
+        alert.accessoryView = picker.view
+        alert.addButton(withTitle: "保存")
         alert.addButton(withTitle: "取消")
 
-        if alert.runModal() == .alertFirstButtonReturn,
-           candidates.indices.contains(popup.indexOfSelectedItem) {
-            onFieldRuleSelected?(candidates[popup.indexOfSelectedItem].rule())
+        if alert.runModal() == .alertFirstButtonReturn, let candidate = picker.selectedCandidate {
+            onFieldRuleSelected?(candidate.rule(label: picker.fieldName))
             stopFieldSelection()
         }
     }
@@ -307,6 +322,51 @@ private struct CapturedNetworkResponse {
     let method: String
     let body: String
     let requestBody: String?
+}
+
+/// Accessory view for the candidate picker: the candidate list plus an editable
+/// display name, because the probe only knows a label when the page exposes one
+/// (`aria-label`/`data-slot`) and otherwise falls back to a generic "页面余额".
+private final class FieldCandidatePicker: NSObject {
+    let view: NSView
+    private let popup: NSPopUpButton
+    private let nameField: NSTextField
+    private let candidates: [FieldCandidate]
+
+    init(candidates: [FieldCandidate]) {
+        self.candidates = candidates
+        self.view = NSView(frame: .init(x: 0, y: 0, width: 560, height: 62))
+        self.popup = NSPopUpButton(frame: .init(x: 0, y: 36, width: 560, height: 26), pullsDown: false)
+        self.nameField = NSTextField(frame: .init(x: 64, y: 4, width: 496, height: 24))
+        super.init()
+
+        candidates.forEach { popup.addItem(withTitle: $0.title) }
+        popup.target = self
+        popup.action = #selector(selectionChanged)
+        nameField.placeholderString = "例如：账户余额"
+        nameField.stringValue = candidates.first.map { $0.rule().label } ?? ""
+
+        let caption = NSTextField(labelWithString: "显示名称")
+        caption.frame = .init(x: 0, y: 8, width: 58, height: 18)
+        caption.font = .systemFont(ofSize: 11)
+        caption.textColor = .secondaryLabelColor
+
+        view.addSubview(popup)
+        view.addSubview(caption)
+        view.addSubview(nameField)
+    }
+
+    @objc private func selectionChanged() {
+        guard candidates.indices.contains(popup.indexOfSelectedItem) else { return }
+        nameField.stringValue = candidates[popup.indexOfSelectedItem].rule().label
+    }
+
+    var selectedCandidate: FieldCandidate? {
+        guard candidates.indices.contains(popup.indexOfSelectedItem) else { return nil }
+        return candidates[popup.indexOfSelectedItem]
+    }
+
+    var fieldName: String { nameField.stringValue }
 }
 
 private struct FieldSelectionPayload: Decodable {

@@ -41,7 +41,8 @@ public final class AppState: ObservableObject {
                         guard let old = previous?.quotas.first(where: { $0.id == id }) else { return nil }
                         let text = old.resetText?.replacingOccurrences(of: " · 上次数据", with: "") ?? ""
                         return Quota(id: old.id, label: old.label, used: old.used, total: old.total,
-                                     unit: old.unit, resetsAt: old.resetsAt, resetText: text + " · 上次数据")
+                                     unit: old.unit, resetsAt: old.resetsAt, resetText: text + " · 上次数据",
+                                     presentation: old.presentation)
                     }
                     return Snapshot(providerId: snapshot.providerId, quotas: merged,
                                     status: .stale("部分额度未更新；缺失项保留上次数据"))

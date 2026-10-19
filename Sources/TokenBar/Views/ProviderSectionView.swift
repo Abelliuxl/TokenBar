@@ -6,6 +6,7 @@ public struct ProviderSectionView: View {
     let onLogin: () -> Void
     let onRefresh: () async -> Void
     let onOpenWebPage: () -> Void
+    let onResetField: (() -> Void)?
     let compactBalance: Bool
     @State private var credentialMode: ProviderFetchMode?
     @State private var selectedModeId: String
@@ -16,12 +17,14 @@ public struct ProviderSectionView: View {
                 onLogin: @escaping () -> Void,
                 onRefresh: @escaping () async -> Void,
                 onOpenWebPage: @escaping () -> Void,
+                onResetField: (() -> Void)? = nil,
                 compactBalance: Bool = false) {
         self.provider = provider
         self.snapshot = snapshot
         self.onLogin = onLogin
         self.onRefresh = onRefresh
         self.onOpenWebPage = onOpenWebPage
+        self.onResetField = onResetField
         self.compactBalance = compactBalance
         if let multiMode = provider as? any MultiModeProviderAdapter {
             _selectedModeId = State(initialValue: ProviderFetchModeStore.selectedModeId(for: multiMode))
@@ -42,6 +45,11 @@ public struct ProviderSectionView: View {
             if provider.supportsWebLogin {
                 Button("打开网页", systemImage: "safari") {
                     onOpenWebPage()
+                }
+            }
+            if let onResetField {
+                Button("重新选择字段…", systemImage: "scope") {
+                    onResetField()
                 }
             }
             if let multiMode = provider as? any MultiModeProviderAdapter {

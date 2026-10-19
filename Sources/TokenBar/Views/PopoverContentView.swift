@@ -115,10 +115,10 @@ public struct PopoverContentView: View {
     }
 
     @MainActor
-    private func loginFlow(for p: any ProviderAdapter) async {
+    private func loginFlow(for p: any ProviderAdapter, autoStartSelection: Bool = false) async {
         let mgr = WebViewSessionManager()
         if let existingCustom = CustomProviderStore.definitions().first(where: { $0.id == p.id }) {
-            await mgr.startLogin(for: p) { rule in
+            await mgr.startLogin(for: p, onFieldRuleSelected: { rule in
                 CustomProviderStore.upsert(CustomProviderDefinition(
                     id: existingCustom.id,
                     displayName: existingCustom.displayName,
@@ -126,7 +126,7 @@ public struct PopoverContentView: View {
                     iconSystemName: existingCustom.iconSystemName,
                     rule: rule
                 ))
-            }
+            }, autoStartSelection: autoStartSelection)
         } else {
             // Built-in providers only need a clean persistent WebView login.
             // Do not inject the custom-site network probe into third-party
@@ -159,6 +159,9 @@ public struct PopoverContentView: View {
             onLogin: { Task { await loginFlow(for: provider) } },
             onRefresh: { await onRefresh() },
             onOpenWebPage: { openInBrowser(provider.loginURL) },
+            onResetField: (provider is CustomProviderAdapter)
+                ? { Task { await loginFlow(for: provider, autoStartSelection: true) } }
+                : nil,
             compactBalance: compactBalance
         )
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -345,6 +348,68 @@ private struct ProviderDragResetDropDelegate: DropDelegate {
     }
 }
 
+/// One saved custom site: inline rename, re-pick of its field rule, and delete.
+private struct CustomSiteRow: View {
+    let definition: CustomProviderDefinition
+    let isReconfiguring: Bool
+    let onRename: (String) -> Void
+    let onReconfigure: () -> Void
+    let onDelete: () -> Void
+    @State private var name = ""
+    @FocusState private var nameFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                TextField("站点名称", text: $name)
+                    .textFieldStyle(.plain)
+                    .focused($nameFocused)
+                    .onSubmit(commitName)
+                    .onChange(of: nameFocused) { _, focused in
+                        if !focused { commitName() }
+                    }
+                Text(ruleSummary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action: onReconfigure) {
+                if isReconfiguring {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "scope")
+                }
+            }
+            .buttonStyle(.borderless)
+            .disabled(isReconfiguring)
+            .help("重新选择字段")
+            Button(action: onDelete) {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .help("删除自定义站点")
+        }
+        .onAppear { name = definition.displayName }
+        .onChange(of: definition.displayName) { _, newValue in name = newValue }
+    }
+
+    private var ruleSummary: String {
+        let source = definition.rule.source == .dom ? "页面字段" : "接口字段"
+        let label = definition.rule.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        return label.isEmpty ? source : "\(source) · \(label)"
+    }
+
+    private func commitName() {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            name = definition.displayName
+            return
+        }
+        guard trimmed != definition.displayName else { return }
+        onRename(trimmed)
+    }
+}
+
 private struct SettingsPanelView: View {
     @ObservedObject var appState: AppState
     let onBack: () -> Void
@@ -359,6 +424,7 @@ private struct SettingsPanelView: View {
     @State private var customProviderName = ""
     @State private var customProviderURL = ""
     @State private var configuringCustomProvider = false
+    @State private var reconfiguringProviderId: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -433,22 +499,13 @@ private struct SettingsPanelView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         ForEach(CustomProviderStore.definitions()) { definition in
-                            HStack(spacing: 8) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(definition.displayName)
-                                    Text(definition.rule.source == .dom ? "页面字段" : "接口字段")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button {
-                                    deleteCustomProvider(definition)
-                                } label: {
-                                    Image(systemName: "trash")
-                                }
-                                .buttonStyle(.borderless)
-                                .help("删除自定义站点")
-                            }
+                            CustomSiteRow(
+                                definition: definition,
+                                isReconfiguring: reconfiguringProviderId == definition.id,
+                                onRename: { rename(definition, to: $0) },
+                                onReconfigure: { reconfigure(definition) },
+                                onDelete: { deleteCustomProvider(definition) }
+                            )
                         }
                     }
 
@@ -536,6 +593,42 @@ private struct SettingsPanelView: View {
             }
             configuringCustomProvider = false
         }
+    }
+
+    /// Re-pick the saved field rule for an existing site, keeping its id so the
+    /// popover order and enabled state survive. This is the escape hatch for a
+    /// site redesign that leaves the old selector matching the wrong element.
+    private func reconfigure(_ definition: CustomProviderDefinition) {
+        guard reconfiguringProviderId == nil else { return }
+        reconfiguringProviderId = definition.id
+        Task { @MainActor in
+            let manager = WebViewSessionManager()
+            await manager.startLogin(
+                for: CustomProviderAdapter(definition: definition),
+                onFieldRuleSelected: { rule in
+                    CustomProviderStore.upsert(CustomProviderDefinition(
+                        id: definition.id,
+                        displayName: definition.displayName,
+                        loginURL: definition.loginURL,
+                        iconSystemName: definition.iconSystemName,
+                        rule: rule
+                    ))
+                },
+                autoStartSelection: true
+            )
+            reconfiguringProviderId = nil
+            await onRefresh()
+        }
+    }
+
+    private func rename(_ definition: CustomProviderDefinition, to name: String) {
+        CustomProviderStore.upsert(CustomProviderDefinition(
+            id: definition.id,
+            displayName: name,
+            loginURL: definition.loginURL,
+            iconSystemName: definition.iconSystemName,
+            rule: definition.rule
+        ))
     }
 
     private func deleteCustomProvider(_ definition: CustomProviderDefinition) {

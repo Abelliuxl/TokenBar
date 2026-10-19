@@ -9,12 +9,13 @@ public final class WebViewSessionManager {
 
     @MainActor
     public func startLogin(for provider: any ProviderAdapter,
-                           onFieldRuleSelected: ((CustomFieldRule) -> Void)? = nil) async {
+                           onFieldRuleSelected: ((CustomFieldRule) -> Void)? = nil,
+                           autoStartSelection: Bool = false) async {
         await withCheckedContinuation { cont in
             let vc = LoginWindowController(provider: provider, onFinish: { [weak self] in
                 self?.controller = nil  // release when done
                 cont.resume()
-            }, onFieldRuleSelected: onFieldRuleSelected)
+            }, onFieldRuleSelected: onFieldRuleSelected, autoStartSelection: autoStartSelection)
             self.controller = vc
             vc.present()
         }

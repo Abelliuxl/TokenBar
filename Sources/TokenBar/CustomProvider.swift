@@ -86,11 +86,12 @@ public struct FieldCandidate: Codable, Sendable, Equatable, Identifiable {
         return "[\(prefix)] \(label.isEmpty ? compactLocation : label) — \(compactPreview)"
     }
 
-    public func rule() -> CustomFieldRule {
-        CustomFieldRule(
+    public func rule(label overrideLabel: String? = nil) -> CustomFieldRule {
+        let resolved = (overrideLabel ?? label).trimmingCharacters(in: .whitespacesAndNewlines)
+        return CustomFieldRule(
             source: source,
-            label: label.isEmpty ? (source == .dom ? "页面余额" : "接口余额") : label,
-            unit: unit,
+            label: resolved.isEmpty ? (source == .dom ? "页面余额" : "接口余额") : resolved,
+            unit: QuotaUnit.normalized(unit),
             valueKind: valueKind,
             domSelector: selector,
             apiURL: endpoint,
@@ -278,17 +279,27 @@ public enum CustomProviderRuntime {
 
     public static func snapshot(providerId: String, rule: CustomFieldRule, text: String) -> Snapshot {
         let numbers = CustomProviderRuntime.numbers(in: text)
+        // The rule was picked from page text, so its unit may still carry the
+        // exact glyph the page used ("￥" U+FFE5 rather than "¥" U+00A5).
+        let unit = QuotaUnit.normalized(rule.unit)
         let quota: Quota?
         switch rule.valueKind {
         case "percent":
-            quota = numbers.first.map { Quota(id: "balance", label: rule.label, used: $0 * rule.scale, total: 100, unit: "%") }
+            quota = numbers.first.map {
+                Quota(id: "balance", label: rule.label, used: $0 * rule.scale, total: 100,
+                      unit: "%", presentation: .usage)
+            }
         case "usedTotal":
             guard numbers.count >= 2 else {
                 return Snapshot(providerId: providerId, quotas: [], status: .error("自定义字段缺少已用/总额"))
             }
-            quota = Quota(id: "balance", label: rule.label, used: numbers[0] * rule.scale, total: numbers[1] * rule.scale, unit: rule.unit)
+            quota = Quota(id: "balance", label: rule.label, used: numbers[0] * rule.scale,
+                          total: numbers[1] * rule.scale, unit: unit, presentation: .usage)
         default:
-            quota = numbers.first.map { Quota(id: "balance", label: rule.label, used: 0, total: $0 * rule.scale, unit: rule.unit) }
+            quota = numbers.first.map {
+                Quota(id: "balance", label: rule.label, used: 0, total: $0 * rule.scale,
+                      unit: unit, presentation: .balance)
+            }
         }
         guard let quota else {
             return Snapshot(providerId: providerId, quotas: [], status: .error("自定义字段中未找到数字"))
@@ -328,7 +339,9 @@ public enum CustomProviderRuntime {
     }
 
     public static func numbers(in text: String) -> [Double] {
-        let pattern = #"(?<![A-Za-z])(?:[¥￥$€]\s*)?([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(?:元|CNY|RMB|USD|tokens?|credits?|%))?"#
+        // The lookbehind spans digits too, so a fragment of an identifier
+        // ("abc123" → "23") is not mistaken for an amount.
+        let pattern = #"(?<![A-Za-z0-9])(?:[¥￥$€]\s*)?([0-9][0-9,]*(?:\.[0-9]+)?)(?:\s*(?:元|CNY|RMB|USD|tokens?|credits?|%))?"#
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return [] }
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         return regex.matches(in: text, range: range).compactMap { match in

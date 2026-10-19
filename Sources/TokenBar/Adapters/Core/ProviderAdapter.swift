@@ -9,16 +9,26 @@ public enum ProviderStatus: Sendable, Equatable {
     case error(String)
 }
 
+/// How a quota reads at a glance: a consumption window belongs in a progress
+/// bar, a balance belongs next to its amount. `nil` means "infer".
+public enum QuotaPresentation: Sendable, Equatable {
+    case usage
+    case balance
+}
+
 public struct Quota: Identifiable, Sendable, Equatable {
     public let id: String
     public let label: String
     public let used: Double
     public let total: Double
-    public let unit: String         // "%" or "¥"
+    public let unit: String         // "%", "¥", "credits", …
     public let resetsAt: Date?
     public let resetText: String?
+    public let presentation: QuotaPresentation?
 
-    public init(id: String, label: String, used: Double, total: Double, unit: String, resetsAt: Date? = nil, resetText: String? = nil) {
+    public init(id: String, label: String, used: Double, total: Double, unit: String,
+                resetsAt: Date? = nil, resetText: String? = nil,
+                presentation: QuotaPresentation? = nil) {
         self.id = id
         self.label = label
         self.used = used
@@ -26,6 +36,7 @@ public struct Quota: Identifiable, Sendable, Equatable {
         self.unit = unit
         self.resetsAt = resetsAt
         self.resetText = resetText
+        self.presentation = presentation
     }
 
     public var fraction: Double {
@@ -33,8 +44,76 @@ public struct Quota: Identifiable, Sendable, Equatable {
         return min(1.0, used / total)
     }
 
+    /// True for a consumption window that should be drawn as a progress bar.
+    /// Balances are the inverse: they carry their amount instead of a ratio, so
+    /// a balance drawn as a bar is always empty and therefore always wrong.
+    public var showsProgressBar: Bool {
+        switch presentation {
+        case .usage: return true
+        case .balance: return false
+        case nil: return unit == "%" || used != 0
+        }
+    }
+
+    /// A money balance in a currency TokenBar can label.
     public var isCurrency: Bool {
-        unit == "¥" || unit == "$"
+        !showsProgressBar && QuotaUnit.currencySymbol(for: unit) != nil
+    }
+}
+
+/// Quota units reach TokenBar by being copied out of page text, so the same
+/// currency arrives spelled several ways: "¥" (U+00A5) and "￥" (U+FFE5) are
+/// different characters, and platforms also use "CNY", "RMB" or "元". Anything
+/// that compares a unit must go through here first.
+public enum QuotaUnit {
+    /// Collapses different encodings of the *same* glyph. The probe copies the
+    /// character the page rendered, so "￥" (U+FFE5) has to compare equal to
+    /// "¥" (U+00A5) — that mismatch is what made yuan balances render as bars.
+    public static func normalized(_ unit: String) -> String {
+        switch unit.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "￥": return "¥"
+        case "＄": return "$"
+        default: return unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// Canonical symbol to render a money amount with, or nil when the unit is
+    /// not money. Currency words and ISO codes map onto their symbol; an
+    /// unrecognised code (HKD, SGD…) is still money and keeps its own label.
+    public static func currencySymbol(for unit: String) -> String? {
+        let value = normalized(unit)
+        switch value {
+        case "¥", "$", "€", "£", "₩": return value
+        case "元", "RMB", "CNY", "JPY": return "¥"
+        case "USD": return "$"
+        case "EUR": return "€"
+        case "GBP": return "£"
+        case "KRW": return "₩"
+        default:
+            let scalars = value.unicodeScalars
+            guard scalars.count == 3,
+                  scalars.allSatisfy({ CharacterSet.uppercaseLetters.contains($0) }) else { return nil }
+            return value
+        }
+    }
+
+    /// Renders a balance for display: money keeps its symbol and two decimals,
+    /// anything else (credits, tokens, a bare number) stays readable as-is.
+    public static func displayAmount(_ value: Double, unit: String) -> String {
+        let trimmed = unit.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let symbol = currencySymbol(for: trimmed) {
+            return symbol + String(format: "%.2f", value)
+        }
+        let number = numberText(value)
+        return trimmed.isEmpty ? number : "\(number) \(trimmed)"
+    }
+
+    private static func numberText(_ value: Double) -> String {
+        guard value.isFinite else { return "0" }
+        if value.rounded() == value, abs(value) < 1e15 {
+            return String(Int(value))
+        }
+        return String(format: "%.2f", value)
     }
 }
 
