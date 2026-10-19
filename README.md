@@ -27,7 +27,7 @@ open build/TokenBar.app
 
 | ID | 服务名 | 抓取模式 | 字段 |
 |---|---|---|---|
-| `opencode-go` | opencode go | WKWebView + JS | 5h / 周 / 月 |
+| `opencode-go` | opencode go | WKWebView + JS / 官方 API Key | 5h / 周 / 月 |
 | `minimax` | MiniMax | WKWebView + JS | 订阅 |
 | `siliconflow` | 硅基流动 | HTTP (cookie auth) | 余额 ¥ |
 | `deepseek` | DeepSeek | 网页登录 / 官方 API | 余额 ¥ / $ |

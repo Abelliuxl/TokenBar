@@ -214,6 +214,14 @@ final class MinimaxAdapterTests: XCTestCase {
 }
 
 final class OpenCodeGoAdapterTests: XCTestCase {
+    func test_usesNewConsoleAndOffersOfficialAPI() {
+        let adapter = OpenCodeGoAdapter()
+        XCTAssertEqual(adapter.loginURL.absoluteString, "https://opencode.ai/console/")
+        XCTAssertEqual(adapter.defaultFetchModeId, "webSession")
+        XCTAssertTrue(adapter.fetchModes.contains { $0.id == "api" })
+        XCTAssertTrue(adapter.harvestScript.contains("aria-valuenow"))
+    }
+
     func test_parseUsesStableQuotaIdsInsteadOfLocalizedLabels() {
         let harvest = """
         {
@@ -231,6 +239,28 @@ final class OpenCodeGoAdapterTests: XCTestCase {
         XCTAssertEqual(snapshot.status, .ok)
         XCTAssertEqual(snapshot.quotas.map(\.id), ["rolling", "weekly", "monthly"])
         XCTAssertEqual(snapshot.quotas.map(\.used), [2, 42, 73])
+    }
+
+    func test_officialAPIParsesAllWindowsAndResetTimes() {
+        let data = Data("""
+        {"usage": {
+          "rolling": {"status":"ok", "percent":12.5, "resetsAt":"2026-09-21T18:30:00.000Z"},
+          "weekly": {"status":"ok", "percent":42, "resetsAt":"2026-09-28T00:00:00.000Z"},
+          "monthly": {"status":"ok", "percent":73, "resetsAt":"2026-10-21T00:00:00.000Z"}
+        }}
+        """.utf8)
+        let snapshot = OpenCodeGoAPI.decode(data: data)
+        XCTAssertEqual(snapshot.status, .ok)
+        XCTAssertEqual(snapshot.quotas.map(\.id), ["rolling", "weekly", "monthly"])
+        XCTAssertEqual(snapshot.quotas.map(\.used), [12.5, 42, 73])
+        XCTAssertTrue(snapshot.quotas.allSatisfy { $0.resetsAt != nil && $0.resetText != nil })
+    }
+
+    func test_officialAPIRejectsIncompleteUsage() {
+        let data = Data(#"{"usage":{"rolling":{"percent":12,"resetsAt":"2026-09-21T18:30:00Z"}}}"#.utf8)
+        let snapshot = OpenCodeGoAPI.decode(data: data)
+        XCTAssertTrue(snapshot.quotas.isEmpty)
+        guard case .error = snapshot.status else { return XCTFail("Expected parse error") }
     }
 }
 

@@ -3,73 +3,72 @@ import WebKit
 
 /// Adapter for opencode go.
 ///
-/// opencode go's usage page is server-side rendered (SSR), so there is no
-/// HTTP API returning structured quota data.  We use the WebViewAdapter
-/// approach: load the workspace Go page in a WKWebView and scrape the DOM.
-///
-/// The quotas are displayed in cards with `data-slot` attributes:
-/// ```html
-/// <div data-slot="usage-item">
-///   <span data-slot="usage-label">滚动用量</span>
-///   <span data-slot="usage-value">2%</span>
-///   <span data-slot="reset-time">重置于 36 分钟</span>
-/// </div>
-/// ```
-///
-/// Three quota types: 滚动用量 (rolling), 每周用量 (weekly), 每月用量 (monthly).
-/// The displayed value is already the used percentage.
+/// Reads the current Console's accessible progress bars from the logged-in
+/// WebKit session. An optional API-key mode uses the official Go usage API.
 ///
 /// See `docs/research/opencode-go-research.md` for details.
-public final class OpenCodeGoAdapter: WebViewAdapter {
+public final class OpenCodeGoAdapter: WebViewAdapter, MultiModeProviderAdapter {
+    public let defaultFetchModeId = "webSession"
+    public let fetchModes = [
+        ProviderFetchMode(id: "webSession", title: "网页登录"),
+        ProviderFetchMode(id: "api", title: "官方 API", credentialFields: [
+            ProviderCredentialField(id: "apiKey", title: "OpenCode Go API Key", placeholder: "sk-...", isSecret: true),
+        ]),
+    ]
+
     public init() {
         let js = """
         (function() {
-          const items = document.querySelectorAll('[data-slot="usage-item"]');
+          const compact = (value) => (value || '').replace(/\\s+/g, ' ').trim();
           const result = {};
-          const fallbackIds = ['rolling', 'weekly', 'monthly'];
-          const idForLabel = (label, index) => {
-            const value = (label || '').toLowerCase();
-            if (value.includes('滚动') || value.includes('rolling')) return 'rolling';
+          const idForLabel = (label) => {
+            const value = compact(label).toLowerCase();
+            if (value.includes('滚动') || value.includes('rolling') || value.includes('5-hour')) return 'rolling';
             if (value.includes('每周') || value.includes('weekly')) return 'weekly';
             if (value.includes('每月') || value.includes('monthly')) return 'monthly';
-            // The card order is stable. This handles a future locale without
-            // making display text a data key.
-            return fallbackIds[index] || null;
+            return null;
           };
-          for (const [index, item] of Array.from(items).entries()) {
+          // Legacy workspace page, retained for accounts still on the old Console.
+          const items = document.querySelectorAll('[data-slot="usage-item"]');
+          for (const item of items) {
             const labelEl = item.querySelector('[data-slot="usage-label"]');
             const valueEl = item.querySelector('[data-slot="usage-value"]');
             const resetEl = item.querySelector('[data-slot="reset-time"]');
             if (!labelEl || !valueEl) continue;
-            const label = labelEl.textContent.trim();
-            const id = idForLabel(label, index);
+            const id = idForLabel(labelEl.textContent);
             if (!id) continue;
-            // Extract the number before the '%' sign
-            const pctMatch = valueEl.textContent.trim().match(/^(\\d+(?:\\.\\d+)?)/);
+            const pctMatch = compact(valueEl.textContent).match(/^(\\d+(?:\\.\\d+)?)\\s*%/);
             if (!pctMatch) continue;
-            const usedPct = parseFloat(pctMatch[1]);
-            const resetText = resetEl ? resetEl.textContent.trim() : '';
-            result[id] = { used: usedPct, reset: resetText };
+            result[id] = { used: Number(pctMatch[1]), reset: compact(resetEl && resetEl.textContent) };
           }
-          const text = document.body ? document.body.innerText.replace(/\\s+/g, ' ').slice(0, 180) : '';
-          const fullText = document.body ? document.body.innerText.replace(/\\s+/g, ' ') : '';
-          const fillFromText = (id, labels) => {
-            if (result[id]) return;
-            const label = labels.find((candidate) => fullText.toLowerCase().includes(candidate.toLowerCase()));
-            if (!label) return;
-            const idx = fullText.toLowerCase().indexOf(label.toLowerCase());
-            if (idx < 0) return;
-            const snippet = fullText.slice(idx, idx + 100);
-            const match = snippet.match(/(\\d+(?:\\.\\d+)?)\\s*%/);
-            if (!match) return;
-            result[id] = { used: parseFloat(match[1]), reset: '' };
-          };
-          fillFromText('rolling', ['滚动用量', 'Rolling usage', 'Rolling']);
-          fillFromText('weekly', ['每周用量', 'Weekly usage', 'Weekly']);
-          fillFromText('monthly', ['每月用量', 'Monthly usage', 'Monthly']);
+
+          // New Console: each meter has a named progressbar with aria-valuenow.
+          for (const bar of document.querySelectorAll('[role="progressbar"][aria-valuenow]')) {
+            const id = idForLabel(bar.getAttribute('aria-label'));
+            if (!id || result[id]) continue;
+            const used = Number(bar.getAttribute('aria-valuenow'));
+            if (!Number.isFinite(used) || used < 0 || used > 100) continue;
+            const card = bar.parentElement && bar.parentElement.parentElement;
+            const reset = card && card.querySelector('[title]');
+            result[id] = { used, reset: compact(reset && reset.textContent) };
+          }
+
+          // The Console home selects the user's organization dynamically.
+          // Follow its Go link instead of embedding one person's workspace ID.
+          let navigating = false;
+          if (!Object.keys(result).length && location.pathname.startsWith('/console/') &&
+              !/\\/go\\/?$/.test(location.pathname)) {
+            const link = Array.from(document.querySelectorAll('a[href]')).find((anchor) => {
+              const url = new URL(anchor.href, location.href);
+              return url.origin === location.origin && /\\/console\\/(?:org_|wrk_)[^/]+\\/go\\/?$/.test(url.pathname);
+            });
+            if (link) { navigating = true; setTimeout(() => location.assign(link.href), 0); }
+          }
+          const text = document.body ? compact(document.body.innerText).slice(0, 240) : '';
           return JSON.stringify({
             quotas: result,
             itemCount: items.length,
+            navigating: navigating,
             href: location.href,
             title: document.title,
             text: text
@@ -78,9 +77,33 @@ public final class OpenCodeGoAdapter: WebViewAdapter {
         """
         super.init(id: "opencode-go", displayName: "opencode go",
                    iconSystemName: "bolt.fill",
-                   loginURL: URL(string: "https://opencode.ai/workspace/wrk_01KVB7CEDBFN8VF6FYA2DJ1GR3/go")!,
+                   loginURL: URL(string: "https://opencode.ai/console/")!,
                    harvestScript: js,
                    brandIcon: .openCode)
+    }
+
+    public override func fetch() async -> Snapshot {
+        guard ProviderFetchModeStore.selectedModeId(for: self) == "api" else {
+            return await super.fetch()
+        }
+        guard let key = ProviderCredentialStore.value(providerId: id, modeId: "api", fieldId: "apiKey")?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !key.isEmpty else {
+            return Snapshot(providerId: id, quotas: [], status: .error("请在右键菜单的“爬取模式 → 官方 API”中配置 OpenCode Go API Key"))
+        }
+        return await OpenCodeGoAPI.fetch(apiKey: key)
+    }
+
+    public override var harvestDelay: TimeInterval { 2 }
+    public override var maximumHarvestAttempts: Int { 15 }
+    public override var harvestRetryDelay: TimeInterval { 2 }
+
+    public override func shouldRetry(harvest: Any?) -> Bool {
+        guard let json = harvest as? String,
+              let data = json.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let quotas = root["quotas"] as? [String: Any],
+              quotas.isEmpty else { return false }
+        return !Self.looksLikeLoginPage(root)
     }
 
     public override func parse(harvest: Any?) -> Snapshot {
@@ -100,7 +123,8 @@ public final class OpenCodeGoAdapter: WebViewAdapter {
         var quotas: [Quota] = []
         for (qid, qlabel) in quotaMap {
             if let entry = raw[qid],
-               let used = Self.doubleValue(entry["used"]) {
+               let used = Self.doubleValue(entry["used"]),
+               used.isFinite, (0...100).contains(used) {
                 quotas.append(Quota(id: qid, label: qlabel,
                                     used: used, total: 100, unit: "%",
                                     resetText: entry["reset"] as? String))
@@ -118,7 +142,7 @@ public final class OpenCodeGoAdapter: WebViewAdapter {
 
     private static func looksLikeLoginPage(_ root: [String: Any]) -> Bool {
         let href = (root["href"] as? String ?? "").lowercased()
-        return href.contains("auth.opencode.ai") || href.contains("/auth")
+        return href.contains("auth.opencode.ai") || href.contains("/auth") || href.contains("/login")
     }
 
     private static func doubleValue(_ value: Any?) -> Double? {
